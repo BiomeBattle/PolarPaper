@@ -20,6 +20,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.BitStorage;
 import net.minecraft.util.Mth;
+import net.minecraft.util.SimpleBitStorage;
+import net.minecraft.util.ZeroBitStorage;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biome;
@@ -306,28 +308,23 @@ public record PolarChunk(
             }
         }
 
-        int airIndex = blockPaletteStrings.indexOf("minecraft:air");
-        boolean airAppended = false;
-        if (airIndex == -1) {
-            blockPaletteStrings.add("minecraft:air");
-            airIndex = blockPaletteStrings.size() - 1;
-            airAppended = true;
-        }
-
-        // TODO: measure time impact of this
         BitStorage blockBitStorage = blockPaletteData.storage().copy();
-        boolean anyExcluded = false;
+        int airIndex = blockPaletteStrings.indexOf("minecraft:air");
+
+        // TODO: needs to remove no longer used palette entries and then fix the int array
+
         for (int index = 0; index < blockBitStorage.getSize(); ++index) {
             boolean included = blockSelector.test(index, chunkX, chunkZ, minSection + sectionI);
             if (included) continue;
-            anyExcluded = true;
-            blockBitStorage.set(index, airIndex);
-        }
+            if (airIndex == -1) {
+                blockPaletteStrings.add("minecraft:air");
+                airIndex = blockPaletteStrings.size() - 1;
+            }
+            if (blockBitStorage instanceof ZeroBitStorage) {
+                blockBitStorage = new SimpleBitStorage(1, blockBitStorage.getSize());
+            }
 
-        // We drop the speculative air entry if nothing was actually culled to it.
-        // A uniform non-air section keeps its single-entry palette instead of an unused air slot.
-        if (airAppended && !anyExcluded) {
-            blockPaletteStrings.remove(blockPaletteStrings.size() - 1);
+            blockBitStorage.set(index, airIndex);
         }
 
         int bitsPerEntry = Mth.ceillog2(blockPaletteStrings.size());
@@ -373,10 +370,13 @@ public record PolarChunk(
             }
         }
 
-        if (blockData.length == 0) {
+        // sanity check
+        if (blockData.length == 0 && blockPaletteStrings.size() > 1) {
+            blockPaletteStrings = List.of(blockPaletteStrings.getFirst());
             blockData = null;
         }
-        if (biomeData.length == 0){
+        if (biomeData.length == 0 && biomePaletteStrings.size() > 1) {
+            biomePaletteStrings = List.of(biomePaletteStrings.getFirst());
             biomeData = null;
         }
 
