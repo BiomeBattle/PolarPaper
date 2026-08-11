@@ -32,9 +32,18 @@ public class Schematic {
     public static final NamespacedKey POS_2_KEY = new NamespacedKey("polarpaper", "pos2");
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir) {
-        byte[] userData = polarWorld.userData();
-        Vector3i offset = WorldUserData.readSchematicOffset(userData);
-        if (offset == null) offset = new Vector3i();
+        Vector3i offset;
+        try {
+            offset = WorldUserData.readSchematicOffset(polarWorld.userData());
+        } catch (Exception e) {
+            offset = null;
+        }
+
+        paste(polarWorld, setter, pasteOffset, rotation, ignoreAir, offset == null ? new Vector3i() : offset);
+    }
+
+    public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir, Vector3i schematicOffset) {
+        Vector3i offset = schematicOffset;
 
         Map<Vector3i, PolarChunk.BlockEntity> blockEntityMap = new HashMap<>();
 
@@ -97,9 +106,15 @@ public class Schematic {
     private static void handleUserData(Setter setter, Vector3i pasteOffset, Rotation rotation, PolarChunk chunk, Vector3i offset) {
         if (chunk.userData() == null || chunk.userData().length == 0) return;
 
-        final var bb = Unpooled.wrappedBuffer(chunk.userData());
-        byte version = bb.readByte();
-        List<PolarEntity> entities = EntityUtil.getEntities(bb);
+        final List<PolarEntity> entities;
+        try {
+            final var bb = Unpooled.wrappedBuffer(chunk.userData());
+            byte version = bb.readByte();
+            entities = EntityUtil.getEntities(bb);
+        } catch (Exception e) {
+            // Chunk userData written by another consumer - not an entity record.
+            return;
+        }
 
         for (PolarEntity polarEntity : entities) {
             Location spawnLocation = polarEntity.getLocation(null, chunk.x(), chunk.z());
@@ -141,16 +156,17 @@ public class Schematic {
             BlockState blockState = materialPalette[0];
             if (blockState.isAir() && (ignoreAir == IgnoreAir.ALL || ignoreAir == IgnoreAir.EMPTY_SECTION)) return;
 
+            BlockState rotatedState = blockState.rotate(rotation.getMcRot());
+
             for (int y = 0; y < 16; y++) {
                 for (int z = 0; z < 16; z++) {
                     for (int x = 0; x < 16; x++) {
                         Vector3i blockPos = new Vector3i(x, y, z);
                         blockPos.add(offset);
-                        blockState = blockState.rotate(rotation.getMcRot());
                         BlockUtil.rotatePos(blockPos, rotation);
                         blockPos.add(pasteOffset);
 
-                        setter.setBlock(blockPos.x, blockPos.y, blockPos.z, blockState);
+                        setter.setBlock(blockPos.x, blockPos.y, blockPos.z, rotatedState);
                     }
                 }
             }
