@@ -160,18 +160,40 @@ public class PolarSection {
     }
 
     public LevelChunkSection createEmptyLevelChunkSection(RegistryAccess registryAccess) {
+        return createEmptyLevelChunkSection(registryAccess, null);
+    }
+
+    public LevelChunkSection createEmptyLevelChunkSection(RegistryAccess registryAccess, @Nullable String fallbackBiome) {
         Registry<Biome> registry = registryAccess.lookupOrThrow(Registries.BIOME);
         Strategy<BlockState> blockStrategy = Strategy.createForBlockStates(Block.BLOCK_STATE_REGISTRY);
         PalettedContainer<BlockState> states = new PalettedContainer<>(Blocks.AIR.defaultBlockState(), blockStrategy, null);
 
         Strategy<Holder<Biome>> biomeStrategy = Strategy.createForBiomes(registry.asHolderIdMap());
-        Holder.Reference<Biome> orThrow = registry.getOrThrow(Biomes.PLAINS);
-        PalettedContainer<Holder<Biome>> biomes = new PalettedContainer<>(orThrow, biomeStrategy, null);
+        PalettedContainer<Holder<Biome>> biomes = new PalettedContainer<>(fallback(registry, fallbackBiome), biomeStrategy, null);
         return new LevelChunkSection(states, biomes);
     }
 
+    private static Holder.Reference<Biome> fallback(Registry<Biome> registry, @Nullable String fallbackBiome) {
+        if (fallbackBiome != null) {
+            Identifier identifier = Identifier.tryParse(fallbackBiome);
+            if (identifier != null) {
+                Holder.Reference<Biome> biome = registry.get(identifier).orElse(null);
+                if (biome != null) return biome;
+                LOGGER.warn("Unknown fallback biome: {}", fallbackBiome);
+            } else {
+                LOGGER.warn("Failed to parse fallback biome key: {}", fallbackBiome);
+            }
+        }
+
+        return registry.getOrThrow(Biomes.PLAINS);
+    }
+
     public LevelChunkSection createLevelChunkSection(RegistryAccess registryAccess) {
-        if (empty) return createEmptyLevelChunkSection(registryAccess);
+        return createLevelChunkSection(registryAccess, null);
+    }
+
+    public LevelChunkSection createLevelChunkSection(RegistryAccess registryAccess, @Nullable String fallbackBiome) {
+        if (empty) return createEmptyLevelChunkSection(registryAccess, fallbackBiome);
 
         // Blocks
         BlockState[] materialPalette = new BlockState[blockPalette.length];
@@ -186,7 +208,7 @@ public class PolarSection {
 
         // Biomes
         Registry<Biome> registry = registryAccess.lookupOrThrow(Registries.BIOME);
-        Holder.Reference<Biome> orThrow = registry.getOrThrow(Biomes.PLAINS);
+        Holder.Reference<Biome> orThrow = fallback(registry, fallbackBiome);
         Holder<Biome>[] biomeHolderPalette = new Holder[biomePalette().length];
         for (int i = 0; i < biomePalette().length; i++) {
             Identifier identifier = Identifier.tryParse(biomePalette()[i]);

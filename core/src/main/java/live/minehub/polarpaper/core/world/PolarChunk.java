@@ -92,6 +92,10 @@ public record PolarChunk(
     }
 
     public NoUnloadLevelChunk createLevelChunk(ServerLevel serverLevel) {
+        return createLevelChunk(serverLevel, null);
+    }
+
+    public NoUnloadLevelChunk createLevelChunk(ServerLevel serverLevel, @Nullable String fallbackBiome) {
         int sectionCount = sections().length;
         SWMRNibbleArray[] blockNibbles = new SWMRNibbleArray[sectionCount + 2]; // light includes extra top and bottom section
         SWMRNibbleArray[] skyNibbles = new SWMRNibbleArray[sectionCount + 2];
@@ -104,7 +108,7 @@ public record PolarChunk(
         for (int i = 0; i < sectionCount; i++) {
             PolarSection polarSection = sections()[i];
             if ((polarSection.skyLightContent() != PolarSection.LightContent.MISSING || polarSection.blockLightContent() != PolarSection.LightContent.MISSING)) lightPresent = true;
-            LevelChunkSection section = polarSection.createLevelChunkSection(serverLevel.registryAccess());
+            LevelChunkSection section = polarSection.createLevelChunkSection(serverLevel.registryAccess(), fallbackBiome);
             levelChunkSections[i] = section;
             skyNibbles[i + 1] = new SWMRNibbleArray(polarSection.skyLight());
             blockNibbles[i + 1] = new SWMRNibbleArray(polarSection.blockLight());
@@ -281,7 +285,7 @@ public record PolarChunk(
     }
 
     private static PolarSection convertSection(int chunkX, int chunkZ, LevelChunkSection chunkAccessSection, Registry<Biome> biomeRegistry, live.minehub.polarpaper.core.world.BlockSelector blockSelector, int minSection, int sectionI, @Nullable LevelLightEngine lightEngine) {
-        if (chunkAccessSection.hasOnlyAir()) return createEmptySection(chunkX, chunkZ, minSection, sectionI, lightEngine);
+        if (chunkAccessSection.hasOnlyAir()) return createEmptySection(chunkX, chunkZ, chunkAccessSection, biomeRegistry, minSection, sectionI, lightEngine);
 
         long[] blockData;
         long[] biomeData;
@@ -336,20 +340,7 @@ public record PolarChunk(
         } else {
             blockData = blockBitStorage.getRaw();
         }
-        PalettedContainer.Data<Holder<Biome>> biomePaletteData = ((PalettedContainer<Holder<Biome>>)chunkAccessSection.getBiomes()).data;
-        Object[] biomePalette = biomePaletteData.palette().moonrise$getRawPalette(biomePaletteData);
-        for (Object p : biomePalette) {
-            if (p == null) continue;
-            if (!(p instanceof Holder<?> biomeHolder)) continue;
-            if (!(biomeHolder.value() instanceof Biome biome)) continue;
-            Identifier key = biomeRegistry.getKey(biome);
-            if (key == null) continue;
-            String biomeString = key.toString();
-            biomePaletteStrings.add(biomeString);
-        }
-
-        BitStorage biomeBitStorage = biomePaletteData.storage();
-        biomeData = biomeBitStorage.getRaw();
+        biomeData = captureBiomes(chunkAccessSection, biomeRegistry, biomePaletteStrings);
 
         PolarSection.LightContent blockLightContent = PolarSection.LightContent.MISSING;
         PolarSection.LightContent skyLightContent = PolarSection.LightContent.MISSING;
@@ -409,7 +400,16 @@ public record PolarChunk(
         return true;
     }
 
-    private static PolarSection createEmptySection(int chunkX, int chunkZ, int minSection, int sectionI, @Nullable LevelLightEngine lightEngine) {
+
+    private static PolarSection createEmptySection(
+      int chunkX,
+      int chunkZ,
+      LevelChunkSection chunkAccessSection,
+      Registry<Biome> biomeRegistry,
+      int minSection,
+      int sectionI,
+      @Nullable LevelLightEngine lightEngine
+    ) {
         if (lightEngine == null) return new PolarSection();
 
         PolarSection.LightContent blockLightContent = PolarSection.LightContent.MISSING;
@@ -429,10 +429,33 @@ public record PolarChunk(
             blockLightContent = LightUtil.getLightContent(blockLightArray);
         }
 
+        List<String> biomePaletteStrings = new ArrayList<>();
+        long[] biomeData = captureBiomes(chunkAccessSection, biomeRegistry, biomePaletteStrings);
+
         return new PolarSection(
+                new String[]{"minecraft:air"}, null,
+                biomePaletteStrings.toArray(new String[0]), biomeData,
                 blockLightContent, blockLight,
                 skyLightContent, skyLight
         );
+    }
+
+    private static long[] captureBiomes(LevelChunkSection chunkAccessSection, Registry<Biome> biomeRegistry, List<String> paletteOut) {
+        PalettedContainer.Data<Holder<Biome>> biomePaletteData = ((PalettedContainer<Holder<Biome>>)chunkAccessSection.getBiomes()).data;
+        Object[] biomePalette = biomePaletteData.palette().moonrise$getRawPalette(biomePaletteData);
+
+        for (Object p : biomePalette) {
+            if (p == null) continue;
+            if (!(p instanceof Holder<?> biomeHolder)) continue;
+            if (!(biomeHolder.value() instanceof Biome biome)) continue;
+
+            Identifier key = biomeRegistry.getKey(biome);
+            if (key == null) continue;
+
+            paletteOut.add(key.toString());
+        }
+
+        return biomePaletteData.storage().getRaw();
     }
 
 }

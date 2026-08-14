@@ -10,8 +10,12 @@ import live.minehub.polarpaper.util.BlockUtil;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
+import io.papermc.paper.registry.RegistryAccess;
+import io.papermc.paper.registry.RegistryKey;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.NamespacedKey;
+import org.bukkit.block.Biome;
 import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.craftbukkit.entity.CraftEntity;
 import org.joml.Vector2i;
@@ -27,6 +31,8 @@ public interface Setter {
     void setBlockEntity(int x, int y, int z, live.minehub.polarpaper.core.world.PolarChunk.BlockEntity blockEntity);
 
     void spawnEntity(PolarEntity polarEntity, Location spawnLocation);
+
+    default void setBiome(int x, int y, int z, String biomeKey) {}
 
     default boolean shouldPaste(live.minehub.polarpaper.core.world.PolarChunk polarChunk, live.minehub.polarpaper.core.world.PolarSection section, int sectionY, Vector3i cornerPos) {
         return true;
@@ -64,6 +70,19 @@ public interface Setter {
             if (!selector.test(x, y, z)) return;
 
             BlockUtil.setBlockFast(world, x, y, z, newBlockState);
+        }
+
+        @Override
+        public void setBiome(int x, int y, int z, String biomeKey) {
+            if (!selector.test(x, y, z)) return;
+
+            NamespacedKey key = NamespacedKey.fromString(biomeKey);
+            if (key == null) return;
+
+            Biome biome = RegistryAccess.registryAccess().getRegistry(RegistryKey.BIOME).get(key);
+            if (biome == null) return;
+
+            world.setBiome(x, y, z, biome);
         }
 
         @Override
