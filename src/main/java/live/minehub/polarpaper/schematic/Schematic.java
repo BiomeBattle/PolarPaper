@@ -43,6 +43,10 @@ public class Schematic {
     }
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir, Vector3i schematicOffset) {
+        paste(polarWorld, setter, pasteOffset, rotation, ignoreAir, schematicOffset, Biomes.IGNORE);
+    }
+
+    public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir, Vector3i schematicOffset, Biomes biomes) {
         Vector3i offset = schematicOffset;
 
         Map<Vector3i, PolarChunk.BlockEntity> blockEntityMap = new HashMap<>();
@@ -57,6 +61,7 @@ public class Schematic {
                 if (!shouldPaste) continue;
 
                 pasteSection(section, setter, blockOffset, pasteOffset, rotation, ignoreAir);
+                if (biomes == Biomes.PASTE) pasteBiomes(section, setter, blockOffset, pasteOffset, rotation);
             }
 
             handleUserData(setter, pasteOffset, rotation, chunk, offset);
@@ -132,6 +137,37 @@ public class Schematic {
         }
     }
 
+    private static void pasteBiomes(PolarSection polarSection, Setter setter, Vector3i offset, Vector3i pasteOffset, Rotation rotation) {
+        if (polarSection.isEmpty()) return;
+
+        String[] palette = polarSection.biomePalette();
+        if (palette.length == 0) return;
+
+        int[] indices = new int[PolarSection.BIOME_PALETTE_SIZE];
+        if (palette.length > 1) {
+            long[] packed = polarSection.biomeData();
+            if (packed == null || packed.length == 0) return;
+
+            PaletteUtil.unpack(indices, packed, PaletteUtil.getBitsForLongLength(packed.length, PolarSection.BIOME_PALETTE_SIZE));
+        }
+
+        int cellIndex = 0;
+        for (int y = 0; y < 4; y++) {
+            for (int z = 0; z < 4; z++) {
+                for (int x = 0; x < 4; x++) {
+                    String biome = palette[Math.min(indices[cellIndex++], palette.length - 1)];
+
+                    Vector3i cellPos = new Vector3i(x * 4, y * 4, z * 4);
+                    cellPos.add(offset);
+                    BlockUtil.rotatePos(cellPos, rotation);
+                    cellPos.add(pasteOffset);
+
+                    setter.setBiome(cellPos.x, cellPos.y, cellPos.z, biome);
+                }
+            }
+        }
+    }
+
     private static void pasteSection(PolarSection polarSection, Setter setter, Vector3i offset, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir) {
         // Blocks
         long[] blockDataLongs = polarSection.blockData();
@@ -189,6 +225,17 @@ public class Schematic {
                 }
             }
         }
+    }
+
+    public enum Biomes {
+        /**
+         * Leave the destination's biomes alone (default)
+         */
+        IGNORE,
+        /**
+         * Apply the schematic's biomes over the destination.
+         */
+        PASTE
     }
 
     public enum IgnoreAir {

@@ -43,6 +43,7 @@ import org.bukkit.craftbukkit.CraftWorld;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.Contract;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -160,11 +161,14 @@ public class PolarStreamLoader {
 
         voidGenerator.setUserData(userData);
 
+        String configuredBiome = voidGenerator.getConfig().fallbackBiome();
+        String fallbackBiome = configuredBiome.isEmpty() ? null : configuredBiome;
+
         int chunkCount = getVarInt(uncompressed);
         CompletableFuture<Void>[] futures = new CompletableFuture[chunkCount];
         for (int i = 0; i < chunkCount; i++) {
             try {
-                CompletableFuture<Void> future = readChunk(worldAccess.getPlugin(), world, dataConverter, worldAccess, version, dataVersion, uncompressed, maxSection - minSection + 1);
+                CompletableFuture<Void> future = readChunk(worldAccess.getPlugin(), world, dataConverter, worldAccess, version, dataVersion, uncompressed, maxSection - minSection + 1, fallbackBiome);
                 if (future.isCompletedExceptionally()) throw future.exceptionNow();
                 futures[i] = future;
             } catch (Throwable e) {
@@ -175,7 +179,7 @@ public class PolarStreamLoader {
         return CompletableFuture.allOf(futures);
     }
 
-    private static CompletableFuture<Void> readChunk(Plugin plugin, World world, @NotNull PolarDataConverter dataConverter, @NotNull PolarWorldAccess worldAccess, short version, int dataVersion, @NotNull ByteBuf bb, int sectionCount) {
+    private static CompletableFuture<Void> readChunk(Plugin plugin, World world, @NotNull PolarDataConverter dataConverter, @NotNull PolarWorldAccess worldAccess, short version, int dataVersion, @NotNull ByteBuf bb, int sectionCount, @Nullable String fallbackBiome) {
         var chunkX = getVarInt(bb);
         var chunkZ = getVarInt(bb);
 
@@ -195,7 +199,7 @@ public class PolarStreamLoader {
             if (!lightPresent && (polarSection.skyLightContent() != PolarSection.LightContent.MISSING || polarSection.blockLightContent() != PolarSection.LightContent.MISSING)) lightPresent = true;
 
             try {
-                LevelChunkSection section = polarSection.createLevelChunkSection(serverLevel.registryAccess());
+                LevelChunkSection section = polarSection.createLevelChunkSection(serverLevel.registryAccess(), fallbackBiome);
                 levelChunkSections[i] = section;
                 skyNibbles[i + 1] = new SWMRNibbleArray(polarSection.skyLight());
                 blockNibbles[i + 1] = new SWMRNibbleArray(polarSection.blockLight());

@@ -30,6 +30,7 @@ import java.util.function.Function;
  * @param difficulty the difficulty
  * @param async whether to create the world asynchronously. Can cause issues with other plugins
  * @param saveLight whether chunks are saved with light data.
+ * @param fallbackBiome biome key used at load time wherever the world has no biome data of its own. Empty means plains
  * Reduces CPU usage when loading the world but increases world size significantly
  * @param worldType Prefer WorldType.FLAT if possible as it skips unnecessary vanilla biome generation
  * @param environment
@@ -45,6 +46,7 @@ public record Config(
         @NotNull Difficulty difficulty,
         boolean async,
         boolean saveLight,
+        @NotNull String fallbackBiome,
         PolarWorld.CompressionType compression,
         int compressionLevel,
         @NotNull WorldType worldType,
@@ -82,6 +84,7 @@ public record Config(
             new EnumProperty<>(Difficulty.class, "difficulty", Difficulty.NORMAL, Config::difficulty, Builder::difficulty),
             new Property<>("async", false, Config::async, Builder::async, "Experimental, may cause issues with other plugins"),
             new Property<>("saveLight", true, Config::saveLight, Builder::saveLight, "Whether chunks are saved with light data. Reduces load time and CPU usage while loading but increases world size"),
+            new Property<>("fallbackBiome", "", Config::fallbackBiome, Builder::fallbackBiome, "Biome key applied when loading, wherever the world has no biome data of its own - e.g. minecraft:plains. Painted biomes always win. Empty means plains"),
             new EnumProperty<>(PolarWorld.CompressionType.class, "compression", PolarWorld.DEFAULT_COMPRESSION, Config::compression, Builder::compression),
             new Property<>("compressionLevel", PolarWorld.DEFAULT_COMPRESSION_LEVEL, Config::compressionLevel, Builder::compressionLevel, "ZSTD compression level, higher means smaller file size but longer save times. Max %s, default %s".formatted(Zstd.maxCompressionLevel(), PolarWorld.DEFAULT_COMPRESSION_LEVEL)),
             new EnumProperty<>(WorldType.class, "worldType", WorldType.FLAT, Config::worldType, Builder::worldType),
@@ -161,6 +164,7 @@ public record Config(
         private @NotNull Difficulty difficulty;
         private boolean async;
         private boolean saveLight;
+        private @NotNull String fallbackBiome = "";
         private PolarWorld.CompressionType compression;
         private int compressionLevel;
         private @NotNull WorldType worldType;
@@ -181,6 +185,7 @@ public record Config(
             this.difficulty = record.difficulty;
             this.async = record.async;
             this.saveLight = record.saveLight;
+            this.fallbackBiome = record.fallbackBiome;
             this.compression = record.compression;
             this.compressionLevel = record.compressionLevel;
             this.worldType = record.worldType;
@@ -268,6 +273,11 @@ public record Config(
             return this;
         }
 
+        public Builder fallbackBiome(@NotNull String fallbackBiome) {
+            this.fallbackBiome = Objects.requireNonNull(fallbackBiome, "Null fallbackBiome");
+            return this;
+        }
+
         /**
          * Whether chunks are saved with light data.
          * Reduces CPU usage when loading the world but increases world size significantly
@@ -323,7 +333,7 @@ public record Config(
 
         public Config build() {
             return new Config(this.autoSaveIntervalTicks, this.announceAutosave, this.time, this.saveOnStop, this.loadOnStartup,
-                    this.spawn, this.difficulty, this.async, this.saveLight, this.compression, this.compressionLevel,
+                    this.spawn, this.difficulty, this.async, this.saveLight, this.fallbackBiome, this.compression, this.compressionLevel,
                     this.worldType, this.environment, this.gamerules);
         }
 

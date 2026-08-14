@@ -187,12 +187,16 @@ public class Polar {
     public static CompletableFuture<@Nullable World> createWorld(@NotNull PolarWorld polarWorld, @NotNull String worldName, @NotNull Config config, @NotNull PolarWorldAccess worldAccess) {
         PolarStreamingGenerator generator = new PolarStreamingGenerator(config, null, worldAccess);
         generator.setUserData(polarWorld.userData());
+
+        String configuredBiome = config.fallbackBiome();
+        String fallbackBiome = configuredBiome.isEmpty() ? null : configuredBiome;
+
         return createWorld(generator, worldName).thenComposeAsync(world -> {
             if (world == null) return CompletableFuture.completedFuture(null);
             ServerLevel level = ((CraftWorld) world).getHandle();
             List<CompletableFuture<Void>> futures = new ArrayList<>();
             for (PolarChunk chunk : polarWorld.chunks()) {
-                NoUnloadLevelChunk levelChunk = chunk.createLevelChunk(level);
+                NoUnloadLevelChunk levelChunk = chunk.createLevelChunk(level, fallbackBiome);
 
                 futures.add(TaskFutures.runSync(PolarPaper.getPlugin(), () -> {
                     for (PolarChunk.BlockEntity blockEntity : chunk.blockEntities()) {
@@ -248,7 +252,8 @@ public class Polar {
         WorldCreator worldCreator = WorldCreator.ofKey(worldKey)
                 .type(config.worldType())
                 .environment(config.environment())
-                .generator(generator);
+                .generator(generator)
+                .biomeProvider(generator.biomeProvider());
 
         return VersionUtil.createNoSaveLevel(worldCreator, config.spawn(), config.difficulty(), config.gamerules(), config.time())
                 .whenComplete((world, ex) -> {
