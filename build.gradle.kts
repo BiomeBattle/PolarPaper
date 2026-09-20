@@ -11,7 +11,7 @@ plugins {
     alias(libs.plugins.shadow)
 }
 
-val developmentVersion = "2.2.3"
+val developmentVersion = "2.2.4"
 
 version = getVersion()
 group = "live.minehub"
@@ -25,10 +25,14 @@ dependencies {
     paperweight.paperDevBundle("${libs.versions.minecraft.get()}.build.+")
 
     implementation(project(":core"))
-    implementation(project(":paper_latest"))
+
+    implementation(project(":paper_26_3"))
+    implementation(project(":paper_26_2"))
     implementation(project(":paper_26_1_2"))
     implementation(project(":paper_1_21_11"))
-    implementation(project(":canvas_latest"))
+
+    implementation(project(":canvas_26_2"))
+
     compileOnly(libs.zstd)
     compileOnly(libs.worldedit)
 }
@@ -36,10 +40,7 @@ dependencies {
 tasks {
     runPaper.folia.registerTask()
     runServer {
-//        minecraftVersion(libs.versions.minecraft.get())
-//        minecraftVersion("1.21.11")
-//        minecraftVersion("26.1.2")
-        minecraftVersion("26.2")
+        minecraftVersion(libs.versions.minecraft.get())
     }
 
     shadowJar {

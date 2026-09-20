@@ -12,6 +12,6 @@ repositories {
 }
 
 dependencies {
-    paperweight.canvasDevBundle("${libs.versions.minecraft.get()}.build.+")
+    paperweight.canvasDevBundle("26.2.build.+")
     compileOnly(project(":core"))
 }

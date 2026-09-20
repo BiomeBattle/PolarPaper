@@ -1,4 +1,4 @@
-package live.minehub.polarpaper.paper_latest;
+package live.minehub.polarpaper.paper_26_3;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -112,7 +112,7 @@ public class NoSaveLevelCreatorImpl implements NoSaveLevelCreator {
         defaultGenSettings.add("layers", new JsonArray());
         defaultGenSettings.add("biome", new JsonPrimitive("minecraft:plains"));
         DedicatedServerProperties.WorldDimensionData properties = new DedicatedServerProperties.WorldDimensionData(creator.generatorSettings().isEmpty() ? defaultGenSettings : GsonHelper.parse(creator.generatorSettings()), creator.type().name().toLowerCase(Locale.ROOT));
-        WorldDimensions worldDimensions = properties.create(context.datapackWorldgen());
+        WorldDimensions worldDimensions = properties.create(context.datapackWorldRegistries());
 
         WorldDimensions.Complete complete = worldDimensions.bake(contextLevelStemRegistry);
         if (complete.dimensions().getValue(actualDimension) == null) {
@@ -235,10 +235,6 @@ public class NoSaveLevelCreatorImpl implements NoSaveLevelCreator {
 
         @Override
         public void save(@Nullable ProgressListener progressListener, boolean flush, boolean savingDisabled, boolean close) {
-        }
-
-        @Override
-        public void saveIncrementally(boolean doFull) {
         }
     }
 

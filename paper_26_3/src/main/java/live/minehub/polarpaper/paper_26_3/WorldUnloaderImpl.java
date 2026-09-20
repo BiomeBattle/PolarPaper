@@ -1,4 +1,4 @@
-package live.minehub.polarpaper.paper_latest;
+package live.minehub.polarpaper.paper_26_3;
 
 import live.minehub.polarpaper.core.WorldUnloader;
 import live.minehub.polarpaper.core.util.TaskFutures;

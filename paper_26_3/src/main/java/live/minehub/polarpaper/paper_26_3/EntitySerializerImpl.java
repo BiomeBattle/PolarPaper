@@ -1,4 +1,4 @@
-package live.minehub.polarpaper.paper_latest;
+package live.minehub.polarpaper.paper_26_3;
 
 import com.mojang.logging.LogUtils;
 import live.minehub.polarpaper.core.userdata.EntitySerializer;

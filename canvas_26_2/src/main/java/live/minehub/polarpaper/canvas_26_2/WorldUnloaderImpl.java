@@ -1,4 +1,4 @@
-package live.minehub.polarpaper.canvas_latest;
+package live.minehub.polarpaper.canvas_26_2;
 
 import live.minehub.polarpaper.core.WorldUnloader;
 import org.bukkit.Bukkit;

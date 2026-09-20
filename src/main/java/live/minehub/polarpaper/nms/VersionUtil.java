@@ -27,7 +27,8 @@ public class VersionUtil {
         String version = Versioning.getCurrentApiVersion();
         return switch (version) {
             case "1.21.11" -> new live.minehub.polarpaper.paper_1_21_11.NoSaveLevelCreatorImpl().createLevel(plugin, creator, spawnPos, difficulty, gamerules, time);
-            default -> new live.minehub.polarpaper.paper_latest.NoSaveLevelCreatorImpl().createLevel(plugin, creator, spawnPos, difficulty, gamerules, time);
+            case "26.1", "26.1.1", "26.1.2", "26.2" -> new live.minehub.polarpaper.paper_26_2.NoSaveLevelCreatorImpl().createLevel(plugin, creator, spawnPos, difficulty, gamerules, time);
+            default -> new live.minehub.polarpaper.paper_26_3.NoSaveLevelCreatorImpl().createLevel(plugin, creator, spawnPos, difficulty, gamerules, time);
         };
     }
 
@@ -38,14 +39,14 @@ public class VersionUtil {
     public static EntitySerializer getEntitySerializer() {
         String version = Versioning.getCurrentApiVersion();
         return switch (version) {
-            case "1.21.11", "26.1.2" -> new live.minehub.polarpaper.paper_26_1.EntitySerializerImpl();
-            default -> new live.minehub.polarpaper.paper_latest.EntitySerializerImpl();
+            case "1.21.11", "26.1", "26.1.1", "26.1.2" -> new live.minehub.polarpaper.paper_26_1.EntitySerializerImpl();
+            default -> new live.minehub.polarpaper.paper_26_3.EntitySerializerImpl();
         };
     }
 
     public static WorldUnloader getWorldUnloader() {
-        if (FoliaUtil.isCanvas()) return new live.minehub.polarpaper.canvas_latest.WorldUnloaderImpl();
-        return new live.minehub.polarpaper.paper_latest.WorldUnloaderImpl();
+        if (FoliaUtil.isCanvas()) return new live.minehub.polarpaper.canvas_26_2.WorldUnloaderImpl();
+        return new live.minehub.polarpaper.paper_26_3.WorldUnloaderImpl();
     }
 
 }
