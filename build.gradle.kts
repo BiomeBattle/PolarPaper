@@ -1,39 +1,46 @@
+import xyz.jpenilla.resourcefactory.paper.PaperPluginYaml.Load
+
 plugins {
     java
     `maven-publish`
 
-    alias(libs.plugins.paperweight.userdev)
+    alias(libs.plugins.weaver.userdev)
     alias(libs.plugins.run)
     alias(libs.plugins.resource.paper)
     alias(libs.plugins.hangar.publish)
     alias(libs.plugins.shadow)
 }
 
-val developmentVersion = "2.1.3-bb"
+val developmentVersion = "2.2.4-bb"
 
 version = getVersion()
 group = "live.minehub"
 
 repositories {
     mavenCentral()
+    maven("https://maven.enginehub.org/repo/")
 }
 
 dependencies {
     paperweight.paperDevBundle("${libs.versions.minecraft.get()}.build.+")
 
     implementation(project(":core"))
-    implementation(project(":paper_latest"))
+
+    implementation(project(":paper_26_3"))
+    implementation(project(":paper_26_2"))
     implementation(project(":paper_26_1_2"))
     implementation(project(":paper_1_21_11"))
+
+    implementation(project(":canvas_26_2"))
+
     compileOnly(libs.zstd)
+    compileOnly(libs.worldedit)
 }
 
 tasks {
     runPaper.folia.registerTask()
     runServer {
-//        minecraftVersion(libs.versions.minecraft.get())
-        minecraftVersion("1.21.11")
-//        minecraftVersion("26.1.2")
+        minecraftVersion(libs.versions.minecraft.get())
     }
 
     shadowJar {
@@ -112,6 +119,11 @@ paperPluginYaml {
 
     main = "live.minehub.polarpaper.PolarPaper"
     loader = "live.minehub.polarpaper.PolarPaperLoader"
+
+    dependencies {
+        server("WorldEdit", load = Load.BEFORE, required = false)
+        server("FastAsyncWorldEdit", load = Load.BEFORE, required = false)
+    }
 }
 
 hangarPublish {
