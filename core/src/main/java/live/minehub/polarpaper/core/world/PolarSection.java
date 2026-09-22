@@ -1,5 +1,7 @@
 package live.minehub.polarpaper.core.world;
 
+import ca.spottedleaf.moonrise.patches.starlight.light.SWMRNibbleArray;
+import live.minehub.polarpaper.core.util.BlockCodec;
 import live.minehub.polarpaper.core.util.PaletteUtil;
 import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
@@ -18,8 +20,6 @@ import net.minecraft.world.level.chunk.Configuration;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.PalettedContainer;
 import net.minecraft.world.level.chunk.Strategy;
-import org.bukkit.Bukkit;
-import org.bukkit.craftbukkit.block.data.CraftBlockData;
 import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -57,9 +57,9 @@ public class PolarSection {
     private final long @Nullable [] biomeData;
 
     private final LightContent blockLightContent;
-    private final byte @Nullable [] blockLight;
+    private final @Nullable SWMRNibbleArray blockLight;
     private final LightContent skyLightContent;
-    private final byte @Nullable [] skyLight;
+    private final @Nullable SWMRNibbleArray skyLight;
 
     public PolarSection() {
         this.empty = true;
@@ -78,8 +78,8 @@ public class PolarSection {
     public PolarSection(
             String @NotNull [] blockPalette, long @Nullable [] blockData,
             String @NotNull [] biomePalette, long @Nullable [] biomeData,
-            @NotNull LightContent blockLightContent, byte @Nullable [] blockLight,
-            @NotNull LightContent skyLightContent, byte @Nullable [] skyLight
+            @NotNull LightContent blockLightContent, @Nullable SWMRNibbleArray blockLight,
+            @NotNull LightContent skyLightContent, @Nullable SWMRNibbleArray skyLight
     ) {
         this.empty = false;
 
@@ -95,8 +95,8 @@ public class PolarSection {
     }
 
     public PolarSection(
-            @NotNull LightContent blockLightContent, byte @Nullable [] blockLight,
-            @NotNull LightContent skyLightContent, byte @Nullable [] skyLight
+            @NotNull LightContent blockLightContent, @Nullable SWMRNibbleArray blockLight,
+            @NotNull LightContent skyLightContent, @Nullable SWMRNibbleArray skyLight
     ) {
         this.empty = false;
 
@@ -145,7 +145,7 @@ public class PolarSection {
         return blockLightContent;
     }
 
-    public byte[] blockLight() {
+    public SWMRNibbleArray blockLight() {
         assert blockLight != null : "must check hasBlockLightData() before calling blockLight()";
         return blockLight;
     }
@@ -154,7 +154,7 @@ public class PolarSection {
         return skyLightContent;
     }
 
-    public byte[] skyLight() {
+    public SWMRNibbleArray skyLight() {
         assert skyLight != null : "must check hasSkyLightData() before calling skyLight()";
         return skyLight;
     }
@@ -198,12 +198,7 @@ public class PolarSection {
         // Blocks
         BlockState[] materialPalette = new BlockState[blockPalette.length];
         for (int i = 0; i < blockPalette.length; i++) {
-            try {
-                materialPalette[i] = ((CraftBlockData) Bukkit.getServer().createBlockData(blockPalette[i])).getState();
-            } catch (IllegalArgumentException _) {
-                LOGGER.warn("Failed to parse block state: {}", blockPalette[i]);
-                materialPalette[i] = Blocks.AIR.defaultBlockState();
-            }
+            materialPalette[i] = BlockCodec.blockFromString(blockPalette[i]);
         }
 
         // Biomes

@@ -1,4 +1,4 @@
-package live.minehub.polarpaper.paper_latest;
+package live.minehub.polarpaper.paper_26_3;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
@@ -34,6 +34,7 @@ import org.bukkit.*;
 import org.bukkit.craftbukkit.CraftGameRule;
 import org.bukkit.craftbukkit.CraftServer;
 import org.bukkit.craftbukkit.util.CraftNamespacedKey;
+import org.bukkit.event.world.WorldLoadEvent;
 import org.bukkit.generator.BiomeProvider;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.plugin.Plugin;
@@ -111,7 +112,7 @@ public class NoSaveLevelCreatorImpl implements NoSaveLevelCreator {
         defaultGenSettings.add("layers", new JsonArray());
         defaultGenSettings.add("biome", new JsonPrimitive("minecraft:plains"));
         DedicatedServerProperties.WorldDimensionData properties = new DedicatedServerProperties.WorldDimensionData(creator.generatorSettings().isEmpty() ? defaultGenSettings : GsonHelper.parse(creator.generatorSettings()), creator.type().name().toLowerCase(Locale.ROOT));
-        WorldDimensions worldDimensions = properties.create(context.datapackWorldgen());
+        WorldDimensions worldDimensions = properties.create(context.datapackWorldRegistries());
 
         WorldDimensions.Complete complete = worldDimensions.bake(contextLevelStemRegistry);
         if (complete.dimensions().getValue(actualDimension) == null) {
@@ -199,41 +200,41 @@ public class NoSaveLevelCreatorImpl implements NoSaveLevelCreator {
             );
 
             serverLevel.dimensionType().defaultClock().ifPresent(clock -> {
-                serverLevel.clockManager().setTotalTicks(clock, time);
+                Bukkit.getGlobalRegionScheduler().execute(plugin, () -> {
+                    serverLevel.clockManager().setTotalTicks(clock, time);
+                });
             });
 
             craftServer.getServer().addLevel(serverLevel); // Paper - Put world into worldlist before initing the world; move up
             craftServer.getServer().initWorld(serverLevel, null);
             // Paper - Put world into worldlist before initing the world; move up
 
-            craftServer.getServer().prepareLevel(serverLevel);
+            serverLevel.setSpawnSettings(serverLevel.isSpawningMonsters());
 
             serverLevel.serverLevelData.setSpawn(LevelData.RespawnData.of(serverLevel.dimension(), new BlockPos(spawnPos.getBlockX(), spawnPos.getBlockY(), spawnPos.getBlockZ()), spawnPos.getYaw(), spawnPos.getPitch()));
 
             craftServer.getServer().updateEffectiveRespawnData();
+
+            new WorldLoadEvent(serverLevel.getWorld()).callEvent();
 
             return serverLevel.getWorld();
         };
 
         boolean async = !craftServer.isPrimaryThread();
         if (async) {
-            return TaskFutures.runSync(plugin, initSupplier);
+            return TaskFutures.runTickThread(plugin, initSupplier);
         } else {
             return CompletableFuture.completedFuture(initSupplier.get());
         }
     }
 
-    private class NoSaveLevel extends ServerLevel {
+    private static class NoSaveLevel extends ServerLevel {
         protected NoSaveLevel(MinecraftServer server, Executor executor, LevelStorageSource.LevelStorageAccess levelStorage, WorldGenSettings worldGenSettings, ResourceKey<Level> dimension, LevelStem levelStem, boolean isDebug, long biomeZoomSeed, List<CustomSpawner> customSpawners, boolean tickTime, ResourceKey<LevelStem> typeKey, World.Environment env, ChunkGenerator gen, BiomeProvider biomeProvider, SavedDataStorage savedDataStorage, PaperWorldLoader.LoadedWorldData loadedWorldData) {
             super(server, executor, levelStorage, worldGenSettings, dimension, levelStem, isDebug, biomeZoomSeed, customSpawners, tickTime, typeKey, env, gen, biomeProvider, savedDataStorage, loadedWorldData);
         }
 
         @Override
         public void save(@Nullable ProgressListener progressListener, boolean flush, boolean savingDisabled, boolean close) {
-        }
-
-        @Override
-        public void saveIncrementally(boolean doFull) {
         }
     }
 

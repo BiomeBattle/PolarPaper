@@ -1,10 +1,10 @@
 package live.minehub.polarpaper.schematic;
 
-import io.netty.buffer.Unpooled;
 import live.minehub.polarpaper.PolarPaper;
 import live.minehub.polarpaper.core.userdata.EntityUtil;
 import live.minehub.polarpaper.core.userdata.WorldUserData;
 import live.minehub.polarpaper.core.util.CoordConversion;
+import live.minehub.polarpaper.core.util.MemorySegmentReader;
 import live.minehub.polarpaper.core.util.PaletteUtil;
 import live.minehub.polarpaper.core.world.PolarChunk;
 import live.minehub.polarpaper.core.world.PolarEntity;
@@ -22,6 +22,7 @@ import org.joml.Vector3i;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.foreign.MemorySegment;
 import java.util.*;
 
 public class Schematic {
@@ -113,9 +114,10 @@ public class Schematic {
 
         final List<PolarEntity> entities;
         try {
-            final var bb = Unpooled.wrappedBuffer(chunk.userData());
-            byte version = bb.readByte();
-            entities = EntityUtil.getEntities(bb);
+            MemorySegment segment = MemorySegment.ofArray(chunk.userData());
+            MemorySegmentReader reader = new MemorySegmentReader(segment);
+            byte version = reader.readByte();
+            entities = EntityUtil.getEntities(reader);
         } catch (Exception e) {
             // Chunk userData written by another consumer - not an entity record.
             return;

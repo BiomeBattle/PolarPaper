@@ -6,16 +6,36 @@ import org.bukkit.entity.Entity;
 import org.bukkit.plugin.Plugin;
 
 public class FoliaUtil {
+  
+    private static final boolean FOLIA = checkFolia();
+    private static final boolean CANVAS = checkCanvas();
 
-    public static void scheduleOnEntityIfFolia(Plugin plugin, Entity entity, Runnable runnable) {
-        if (isFolia()) {
-            entity.getScheduler().execute(plugin, runnable, null, 1L);
-        } else {
-            runnable.run();
+    /**
+     * Runs the task on the thread owning the entity
+     *
+     * @param retired Run instead of the task when the entity is gone and the task can no longer be executed
+     */
+    public static void scheduleOnEntityIfFolia(Plugin plugin, Entity entity, Runnable runnable, Runnable retired) {
+        if (ShutdownExecutor.isRunning()) {
+            ShutdownExecutor.execute(runnable);
+            return;
         }
+
+        if (!isFolia() || Bukkit.isOwnedByCurrentRegion(entity)) {
+            runnable.run();
+            return;
+        }
+
+        // execute returns false when the entity has been removed, in which case neither callback is run
+        if (!entity.getScheduler().execute(plugin, runnable, retired, 1L)) retired.run();
     }
 
     public static void scheduleOnRegionIfFolia(Plugin plugin, World world, int chunkX, int chunkZ, Runnable runnable) {
+        if (ShutdownExecutor.isRunning()) {
+            ShutdownExecutor.execute(runnable);
+            return;
+        }
+
         if (isFolia()) {
             Bukkit.getRegionScheduler().execute(plugin, world, chunkX, chunkZ, runnable);
         } else {
@@ -24,8 +44,25 @@ public class FoliaUtil {
     }
 
     public static boolean isFolia() {
+        return FOLIA;
+    }
+
+    public static boolean isCanvas() {
+        return CANVAS;
+    }
+
+    private static boolean checkFolia() {
         try {
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    private static boolean checkCanvas() {
+        try {
+            Class.forName("io.canvasmc.canvas.GlobalConfiguration");
             return true;
         } catch (ClassNotFoundException e) {
             return false;

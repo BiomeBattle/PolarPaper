@@ -6,8 +6,7 @@ import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManage
 import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.NewChunkHolder;
 import ca.spottedleaf.moonrise.patches.starlight.light.SWMRNibbleArray;
 import ca.spottedleaf.moonrise.patches.starlight.light.StarLightEngine;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import live.minehub.polarpaper.core.generator.PolarStreamLoader;
 import live.minehub.polarpaper.core.util.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -20,11 +19,10 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.BitStorage;
 import net.minecraft.util.Mth;
-import net.minecraft.util.SimpleBitStorage;
-import net.minecraft.util.ZeroBitStorage;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.*;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
@@ -110,8 +108,8 @@ public record PolarChunk(
             if ((polarSection.skyLightContent() != PolarSection.LightContent.MISSING || polarSection.blockLightContent() != PolarSection.LightContent.MISSING)) lightPresent = true;
             LevelChunkSection section = polarSection.createLevelChunkSection(serverLevel.registryAccess(), fallbackBiome);
             levelChunkSections[i] = section;
-            skyNibbles[i + 1] = new SWMRNibbleArray(polarSection.skyLight());
-            blockNibbles[i + 1] = new SWMRNibbleArray(polarSection.blockLight());
+            skyNibbles[i + 1] = polarSection.skyLight();
+            blockNibbles[i + 1] = polarSection.blockLight();
 
         }
         NoUnloadLevelChunk chunk = new NoUnloadLevelChunk(serverLevel, new ChunkPos(x, z), UpgradeData.EMPTY, new LevelChunkTicks<>(), new LevelChunkTicks<>(), 0L, levelChunkSections, null, null);
@@ -235,41 +233,49 @@ public record PolarChunk(
 
         CompletableFuture<Void> future = new CompletableFuture<>();
         FoliaUtil.scheduleOnRegionIfFolia(worldAccess.getPlugin(), world, chunkX, chunkZ, () -> {
-            for (BlockPos blockPos : chunkAccess.getBlockEntitiesPos()) {
-                net.minecraft.world.level.block.entity.BlockEntity blockEntity = chunkAccess.getBlockEntity(blockPos);
+            try {
+                for (BlockPos blockPos : chunkAccess.getBlockEntitiesPos()) {
+                    net.minecraft.world.level.block.entity.BlockEntity blockEntity = getBlockEntity(chunkAccess, blockPos);
 
-                if (blockEntity == null) continue;
-                if (!blockSelector.test(blockPos.getX(), blockPos.getY(), blockPos.getZ())) continue;
+                    if (blockEntity == null) continue;
+                    if (!blockSelector.test(blockPos.getX(), blockPos.getY(), blockPos.getZ())) continue;
 
-                CompoundTag compoundTag = blockEntity.saveWithFullMetadata(registryAccess);
+                    CompoundTag compoundTag = blockEntity.saveWithFullMetadata(registryAccess);
 
-                Optional<String> id = compoundTag.getString("id");
-                if (id.isEmpty()) {
-                    LOGGER.warn("No ID in block entity data at: {}", blockPos);
-                    LOGGER.warn("Compound tag: {}", compoundTag);
-                    continue;
+                    Optional<String> id = compoundTag.getString("id");
+                    if (id.isEmpty()) {
+                        LOGGER.warn("No ID in block entity data at: {}", blockPos);
+                        LOGGER.warn("Compound tag: {}", compoundTag);
+                        continue;
+                    }
+
+                    int index = CoordConversion.chunkBlockIndex(blockPos.getX(), blockPos.getY(), blockPos.getZ());
+                    polarBlockEntities.add(new BlockEntity(index, id.get(), compoundTag));
+                    blockEntities.put(blockPos, blockEntity);
                 }
 
-                int index = CoordConversion.chunkBlockIndex(blockPos.getX(), blockPos.getY(), blockPos.getZ());
-                polarBlockEntities.add(new BlockEntity(index, id.get(), compoundTag));
-                blockEntities.put(blockPos, blockEntity);
+                future.complete(null);
+            } catch (Exception e) {
+                // the future is what the rest of the conversion waits on, so it has to be completed either way
+                future.completeExceptionally(e);
             }
-
-            future.complete(null);
         });
 
         int[][] heightMaps = new int[PolarChunk.MAX_HEIGHTMAPS][0];
         worldAccess.saveHeightmaps(chunkAccess, heightMaps);
 
-        ByteBuf userDataOutput = Unpooled.directBuffer();
         List<net.minecraft.world.entity.Entity> allEntities = entityChunk == null ? List.of() : entityChunk.getAllEntities();
         List<org.bukkit.entity.Entity> newAllEntities = new ArrayList<>();
         for (net.minecraft.world.entity.Entity ent : allEntities) {
             if (blockSelector.test(ent.getBlockX(), ent.getBlockY(), ent.getBlockZ())) newAllEntities.add(ent.getBukkitEntity());
         }
         org.bukkit.entity.Entity[] entitiesArray = newAllEntities.toArray(new org.bukkit.entity.Entity[0]);
-        worldAccess.saveChunkData(chunkAccess, blockEntities, entitiesArray, userDataOutput);
-        byte[] userData = ByteArrayUtil.outputArray(userDataOutput);
+
+        byte[] userData;
+        try (var writer = new MemorySegmentWriter(256)) {
+            worldAccess.saveChunkData(chunkAccess, blockEntities, entitiesArray, writer);
+            userData = writer.getWrittenBytes();
+        }
 
         return future.thenApply(_ -> new PolarChunk(
                 chunkX,
@@ -284,35 +290,72 @@ public record PolarChunk(
         });
     }
 
-    private static PolarSection convertSection(int chunkX, int chunkZ, LevelChunkSection chunkAccessSection, Registry<Biome> biomeRegistry, live.minehub.polarpaper.core.world.BlockSelector blockSelector, int minSection, int sectionI, @Nullable LevelLightEngine lightEngine) {
+    /**
+     * Reads a block entity out of a chunk that is being converted
+     * <p>
+     * While the server is stopping this goes straight to the chunk's own block entities. The captured block entities
+     * that {@link LevelChunk#getBlockEntity} looks at first live in region data on Folia, which the thread stopping
+     * the server cannot reach, and nothing is capturing block entities by then anyway
+     */
+    private static net.minecraft.world.level.block.entity.@Nullable BlockEntity getBlockEntity(ChunkAccess chunkAccess, BlockPos blockPos) {
+        if (ShutdownExecutor.isRunning() && chunkAccess instanceof LevelChunk levelChunk) {
+            return levelChunk.getBlockEntities().get(blockPos);
+        }
+        return chunkAccess.getBlockEntity(blockPos);
+    }
+
+    private static List<String> getBlockPaletteStrings(PalettedContainer<BlockState> palette) {
+        List<String> blockPaletteStrings = new ArrayList<>();
+
+        Palette<BlockState> chunkPalette = palette.data.palette();
+        if (chunkPalette instanceof GlobalPalette<BlockState> globalPalette) {
+            for (int i1 = 0; i1 < globalPalette.getSize(); i1++) {
+                BlockState blockState = globalPalette.valueFor(i1);
+                blockPaletteStrings.add(BlockCodec.stringFromBlock(blockState));
+            }
+        } else {
+            Object[] rawPalette = chunkPalette.moonrise$getRawPalette(palette.data);
+            if (rawPalette != null) {
+                for (Object p : rawPalette) {
+                    if (!(p instanceof BlockState blockState)) continue;
+                    blockPaletteStrings.add(BlockCodec.stringFromBlock(blockState));
+                }
+            }
+        }
+
+        return blockPaletteStrings;
+    }
+
+    private static List<String> getBiomePaletteStrings(PalettedContainer<Holder<Biome>> biomes, Registry<Biome> biomeRegistry) {
+        List<String> biomePaletteStrings = new ArrayList<>();
+        Object[] biomePalette = biomes.data.palette().moonrise$getRawPalette(biomes.data);
+        for (Object p : biomePalette) {
+            if (p == null) continue;
+            if (!(p instanceof Holder<?> biomeHolder)) continue;
+            if (!(biomeHolder.value() instanceof Biome biome)) continue;
+            Identifier key = biomeRegistry.getKey(biome);
+            if (key == null) continue;
+            String biomeString = key.toString();
+            biomePaletteStrings.add(biomeString);
+        }
+        return biomePaletteStrings;
+    }
+
+    private static PolarSection convertSection(int chunkX, int chunkZ, LevelChunkSection chunkAccessSection, Registry<Biome> biomeRegistry, BlockSelector blockSelector, int minSection, int sectionI, @Nullable LevelLightEngine lightEngine) {
         if (chunkAccessSection.hasOnlyAir()) return createEmptySection(chunkX, chunkZ, chunkAccessSection, biomeRegistry, minSection, sectionI, lightEngine);
 
         long[] blockData;
         long[] biomeData;
 
-        List<String> blockPaletteStrings = new ArrayList<>();
-        List<String> biomePaletteStrings = new ArrayList<>();
+        PalettedContainer<BlockState> copiedPalette = chunkAccessSection.getStates().copy();
+        PalettedContainer<Holder<Biome>> copiedBiomesPalette = chunkAccessSection.getBiomes().copy();
+        List<String> blockPaletteStrings = getBlockPaletteStrings(copiedPalette);
+        List<String> biomePaletteStrings = getBiomePaletteStrings(copiedBiomesPalette, biomeRegistry);
 
-        PalettedContainer.Data<BlockState> blockPaletteData = chunkAccessSection.getStates().data;
-        Palette<BlockState> chunkPalette = blockPaletteData.palette();
-        if (chunkPalette instanceof GlobalPalette<BlockState> globalPalette) {
-            for (int i1 = 0; i1 < globalPalette.getSize(); i1++) {
-                BlockState blockState = globalPalette.valueFor(i1);
-                blockPaletteStrings.add(blockState.toString()
-                        .replace("Block{", "").replace("}", "")); // e.g. Block{minecraft:oak_fence}[...] to minecraft:oak_fence[...]
-            }
-        } else {
-            Object[] palette = chunkPalette.moonrise$getRawPalette(blockPaletteData);
-            if (palette != null) {
-                for (Object p : palette) {
-                    if (!(p instanceof BlockState blockState)) continue;
-                    blockPaletteStrings.add(blockState.toString()
-                            .replace("Block{", "").replace("}", "")); // e.g. Block{minecraft:oak_fence}[...] to minecraft:oak_fence[...]
-                }
-            }
-        }
+        BitStorage biomeBitStorage = copiedBiomesPalette.data.storage();
+        biomeData = biomeBitStorage.getRaw();
 
-        BitStorage blockBitStorage = blockPaletteData.storage().copy();
+        BitStorage blockBitStorage = copiedPalette.data.storage();
         int airIndex = blockPaletteStrings.indexOf("minecraft:air");
 
         // TODO: needs to remove no longer used palette entries and then fix the int array
@@ -321,13 +364,11 @@ public record PolarChunk(
             boolean included = blockSelector.test(index, chunkX, chunkZ, minSection + sectionI);
             if (included) continue;
             if (airIndex == -1) {
-                blockPaletteStrings.add("minecraft:air");
-                airIndex = blockPaletteStrings.size() - 1;
-            }
-            if (blockBitStorage instanceof ZeroBitStorage) {
-                blockBitStorage = new SimpleBitStorage(1, blockBitStorage.getSize());
+                airIndex = copiedPalette.data.palette().idFor(Blocks.AIR.defaultBlockState(), copiedPalette);
+                blockPaletteStrings = getBlockPaletteStrings(copiedPalette);
             }
 
+            blockBitStorage = copiedPalette.data.storage();
             blockBitStorage.set(index, airIndex);
         }
 
@@ -344,20 +385,22 @@ public record PolarChunk(
 
         PolarSection.LightContent blockLightContent = PolarSection.LightContent.MISSING;
         PolarSection.LightContent skyLightContent = PolarSection.LightContent.MISSING;
-        byte[] blockLight = null;
-        byte[] skyLight = null;
+        SWMRNibbleArray blockLight = null;
+        SWMRNibbleArray skyLight = null;
 
         if (lightEngine != null) {
             DataLayer skyLightArray = lightEngine.getLayerListener(LightLayer.SKY).getDataLayerData(SectionPos.of(chunkX, minSection + sectionI, chunkZ));
             DataLayer blockLightArray = lightEngine.getLayerListener(LightLayer.BLOCK).getDataLayerData(SectionPos.of(chunkX, minSection + sectionI, chunkZ));
 
             if (skyLightArray != null) {
-                skyLight = skyLightArray.isDefinitelyHomogenous() ? null : skyLightArray.getData();
                 skyLightContent = LightUtil.getLightContent(skyLightArray);
+                skyLight = LightUtil.getLightNibble(skyLightContent);
+                if (skyLight == null) skyLight = new SWMRNibbleArray(skyLightArray.getData());
             }
             if (blockLightArray != null) {
-                blockLight = blockLightArray.isDefinitelyHomogenous() ? null : blockLightArray.getData();
                 blockLightContent = LightUtil.getLightContent(blockLightArray);
+                blockLight = LightUtil.getLightNibble(blockLightContent);
+                if (blockLight == null) blockLight = new SWMRNibbleArray(blockLightArray.getData());
             }
         }
 
@@ -414,19 +457,21 @@ public record PolarChunk(
 
         PolarSection.LightContent blockLightContent = PolarSection.LightContent.MISSING;
         PolarSection.LightContent skyLightContent = PolarSection.LightContent.MISSING;
-        byte[] blockLight = null;
-        byte[] skyLight = null;
+        SWMRNibbleArray blockLight = null;
+        SWMRNibbleArray skyLight = null;
 
         DataLayer skyLightArray = lightEngine.getLayerListener(LightLayer.SKY).getDataLayerData(SectionPos.of(chunkX, minSection + sectionI, chunkZ));
         DataLayer blockLightArray = lightEngine.getLayerListener(LightLayer.BLOCK).getDataLayerData(SectionPos.of(chunkX, minSection + sectionI, chunkZ));
 
         if (skyLightArray != null) {
-            skyLight = skyLightArray.isDefinitelyHomogenous() ? null : skyLightArray.getData();
             skyLightContent = LightUtil.getLightContent(skyLightArray);
+            skyLight = LightUtil.getLightNibble(skyLightContent);
+            if (skyLight == null) skyLight = new SWMRNibbleArray(skyLightArray.getData());
         }
         if (blockLightArray != null) {
-            blockLight = blockLightArray.isDefinitelyHomogenous() ? null : blockLightArray.getData();
             blockLightContent = LightUtil.getLightContent(blockLightArray);
+            blockLight = LightUtil.getLightNibble(blockLightContent);
+            if (blockLight == null) blockLight = new SWMRNibbleArray(blockLightArray.getData());
         }
 
         List<String> biomePaletteStrings = new ArrayList<>();
