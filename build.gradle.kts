@@ -73,17 +73,11 @@ tasks.named("build") {
 
 publishing {
     repositories {
-        // Publish to Maven Local only if not running in an action environment
-        if (!isAction()) {
-            mavenLocal()
-        } else {
-            maven {
-                name = if (version.toString().endsWith("-SNAPSHOT")) "Snapshots" else "Releases"
-                url = uri("https://repo.minehub.live/" + if (version.toString().endsWith("-SNAPSHOT")) "snapshots" else "releases")
-                credentials {
-                    username = System.getenv("REPO_ACTOR")
-                    password = System.getenv("REPO_TOKEN")
-                }
+        maven {
+            url = uri("https://repo.biomebattle.net/repository/biomebattle-repo/")
+            credentials {
+                this.username = System.getenv("BB_REPO_USERNAME")
+                this.password = System.getenv("BB_REPO_PASSWORD")
             }
         }
     }
