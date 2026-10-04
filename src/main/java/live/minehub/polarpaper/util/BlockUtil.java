@@ -174,12 +174,13 @@ public class BlockUtil {
         ChunkAccess chunkAccess = chunkHolder.getCurrentChunk();
         if (chunkAccess == null) return;
 
-        blockEntity.data().putInt("x", x);
-        blockEntity.data().putInt("y", y);
-        blockEntity.data().putInt("z", z);
+        var data = blockEntity.data().copy();
+        data.putInt("x", x);
+        data.putInt("y", y);
+        data.putInt("z", z);
 
         var registryAccess = ((CraftServer) Bukkit.getServer()).getServer().registryAccess();
-        BlockEntity nmsBlockEntity = BlockEntity.loadStatic(new BlockPos(x, y, z), chunkAccess.getBlockState(x, y, z), blockEntity.data(), registryAccess);
+        BlockEntity nmsBlockEntity = BlockEntity.loadStatic(new BlockPos(x, y, z), chunkAccess.getBlockState(x, y, z), data, registryAccess);
         if (nmsBlockEntity == null) return;
         serverLevel.getChunk(chunkX, chunkZ).addAndRegisterBlockEntity(nmsBlockEntity);
     }
@@ -189,6 +190,46 @@ public class BlockUtil {
         rotatePos(vec, rotation);
         loc.set(vec.x, vec.y, vec.z);
         loc.setYaw(loc.getYaw() + rotation.toDegrees());
+    }
+
+    /**
+     * Transforms a continuous local point into paste coordinates: flip, rotate, then adjust the
+     * rotated block corner. Block indices must instead use {@link #flipBlockPos(Vector3i, Flip)}.
+     * <pre>{@code BlockUtil.transformPos(point, Rotation.CLOCKWISE_90, Flip.X);}</pre>
+     * @param point point to transform in place
+     * @param rotation rotation applied after reflection
+     * @param flip reflection of the source coordinates
+     * @since 2.2.5-bb
+     */
+    public static void transformPos(@NotNull Vector3d point, @NotNull Rotation rotation, @NotNull Flip flip) {
+        flipPos(point, flip);
+        rotatePos(point, rotation);
+        switch (rotation) {
+            case CLOCKWISE_90 -> point.add(1, 0, 0);
+            case CLOCKWISE_180 -> point.add(1, 0, 1);
+            case CLOCKWISE_270 -> point.add(0, 0, 1);
+            default -> {}
+        }
+    }
+
+    /**
+     * Maps an absolute source location and facing into the destination paste in place.
+     * <pre>{@code BlockUtil.transformLoc(location, sourceOffset, destinationOffset, rotation, flip);}</pre>
+     * @param loc source location to transform
+     * @param schematicOffset source origin
+     * @param pasteOffset destination origin
+     * @param rotation rotation applied after reflection
+     * @param flip reflection of the source coordinates
+     * @since 2.2.5-bb
+     */
+    public static void transformLoc(@NotNull Location loc, @NotNull Vector3i schematicOffset,
+                                   @NotNull Vector3i pasteOffset, @NotNull Rotation rotation, @NotNull Flip flip) {
+        var point = new Vector3d(loc.x(), loc.y(), loc.z())
+                .sub(schematicOffset.x, schematicOffset.y, schematicOffset.z);
+        transformPos(point, rotation, flip);
+        point.add(pasteOffset.x, pasteOffset.y, pasteOffset.z);
+        loc.set(point.x, point.y, point.z);
+        loc.setYaw(flipYaw(loc.getYaw(), flip) + rotation.toDegrees());
     }
 
     public static void flipBlockPos(@NotNull Vector3i point, @NotNull Flip flip) {

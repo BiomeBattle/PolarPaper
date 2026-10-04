@@ -27,6 +27,8 @@ import org.joml.Vector3i;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
 
 public interface Setter {
     void setBlock(int x, int y, int z, BlockState newBlockState);
@@ -39,6 +41,39 @@ public interface Setter {
 
     default boolean shouldPaste(PolarChunk polarChunk, PolarSection section, int sectionY, Vector3i cornerPos) {
         return true;
+    }
+
+    /**
+     * Writes a block entity and reports completion. Asynchronous setters must override this method.
+     * <pre>{@code var completion = setter.setBlockEntityAsync(x, y, z, blockEntity);}</pre>
+     * @return completion of the block-entity write
+     * @since 2.2.5-bb
+     */
+    default CompletableFuture<Void> setBlockEntityAsync(int x, int y, int z, PolarChunk.BlockEntity blockEntity) {
+        setBlockEntity(x, y, z, blockEntity);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Spawns an entity and reports completion. Asynchronous setters must override this method.
+     * <pre>{@code var completion = setter.spawnEntityAsync(entity, location);}</pre>
+     * @return completion of the entity spawn
+     * @since 2.2.5-bb
+     */
+    default CompletableFuture<Void> spawnEntityAsync(PolarEntity polarEntity, Location spawnLocation) {
+        spawnEntity(polarEntity, spawnLocation);
+        return CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Finishes destination-specific work after all paste writes complete.
+     * <pre>{@code var completion = setter.finishPasteAsync(chunks);}</pre>
+     * @param chunksToRefresh destination chunks affected by the paste
+     * @return completion of destination finalization
+     * @since 2.2.5-bb
+     */
+    default CompletableFuture<Void> finishPasteAsync(Set<Vector2i> chunksToRefresh) {
+        return CompletableFuture.completedFuture(null);
     }
 
     class World implements Setter {
@@ -65,19 +100,21 @@ public interface Setter {
 
         @Override
         public boolean shouldPaste(PolarChunk polarChunk, PolarSection section, int sectionY, Vector3i cornerPos) {
-            return selector.testChunk(polarChunk.x(), polarChunk.z());
+            // Source chunk coordinates do not describe a reflected or translated destination footprint.
+            // The destination selector is applied by each write instead.
+            return true;
         }
 
         @Override
         public void setBlock(int x, int y, int z, BlockState newBlockState) {
-            if (!selector.test(x, y, z)) return;
+            if (!includes(x, y, z)) return;
 
             BlockUtil.setBlockFast(world, x, y, z, newBlockState);
         }
 
         @Override
         public void setBiome(int x, int y, int z, String biomeKey) {
-            if (!selector.test(x, y, z)) return;
+            if (!includes(x, y, z)) return;
 
             NamespacedKey key = NamespacedKey.fromString(biomeKey);
             if (key == null) return;
@@ -90,25 +127,38 @@ public interface Setter {
 
         @Override
         public void setBlockEntity(int x, int y, int z, PolarChunk.BlockEntity blockEntity) {
-            if (!selector.test(x, y, z)) return;
+            if (!includes(x, y, z)) return;
 
             BlockUtil.setBlockEntity(world, x, y, z, blockEntity);
         }
 
         @Override
         public void spawnEntity(PolarEntity polarEntity, Location spawnLocation) {
-            if (!selector.test(spawnLocation.blockX(), spawnLocation.blockY(), spawnLocation.blockZ())) return;
+            spawnEntityAsync(polarEntity, spawnLocation).exceptionally(error -> {
+                PolarPaper.getPlugin().getLogger().log(java.util.logging.Level.SEVERE, "Failed to paste entity", error);
+                return null;
+            });
+        }
 
-            spawnLocation.setWorld(world);
+        @Override
+        public CompletableFuture<Void> setBlockEntityAsync(int x, int y, int z, PolarChunk.BlockEntity blockEntity) {
+            if (!includes(x, y, z)) return CompletableFuture.completedFuture(null);
+            return runAt(new Location(world, x, y, z), () -> setBlockEntity(x, y, z, blockEntity));
+        }
 
-            EntitySerializer entitySerializer = VersionUtil.getEntitySerializer();
-            net.minecraft.world.entity.Entity nmsEntity = polarEntity.toNMSEntity(entitySerializer, world, spawnLocation);
-            if (nmsEntity == null) return;
-
-            CraftEntity entity = nmsEntity.getBukkitEntity();
-
-            Bukkit.getRegionScheduler().run(PolarPaper.getPlugin(), spawnLocation, _ -> {
-                PolarEntitySpawnEvent event = new PolarEntitySpawnEvent(polarEntity, entity, spawnLocation, true);
+        @Override
+        public CompletableFuture<Void> spawnEntityAsync(PolarEntity polarEntity, Location spawnLocation) {
+            if (!includes(spawnLocation.blockX(), spawnLocation.blockY(), spawnLocation.blockZ())) {
+                return CompletableFuture.completedFuture(null);
+            }
+            var location = spawnLocation.clone();
+            location.setWorld(world);
+            return runAt(location, () -> {
+                EntitySerializer entitySerializer = VersionUtil.getEntitySerializer();
+                var nmsEntity = polarEntity.toNMSEntity(entitySerializer, world, location);
+                if (nmsEntity == null) throw new IllegalArgumentException("Failed to decode pasted entity at " + location);
+                CraftEntity entity = nmsEntity.getBukkitEntity();
+                PolarEntitySpawnEvent event = new PolarEntitySpawnEvent(polarEntity, entity, location, true);
                 event.callEvent();
                 if (!event.isCancelled()) {
                     EntityUtil.spawnEntity(entity, world);
@@ -117,19 +167,79 @@ public interface Setter {
         }
 
         public void refreshChunks(Set<Vector2i> chunksToRefresh) {
-            CraftWorld craftWorld = (CraftWorld) world;
-            ServerLevel serverLevel = craftWorld.getHandle();
-
-            // relight chunks and resend blocks to client
-            serverLevel.getChunkSource().getLightEngine().starlight$serverRelightChunks(vecsToChunkPos(chunksToRefresh), _ -> {}, _ -> {});
-            for (Vector2i c : chunksToRefresh) {
-                Bukkit.getRegionScheduler().execute(PolarPaper.getPlugin(), world, c.x(), c.y(), () -> {
-                    world.refreshChunk(c.x(), c.y());
-                });
-            }
+            finishPasteAsync(chunksToRefresh).exceptionally(error -> {
+                PolarPaper.getPlugin().getLogger().log(java.util.logging.Level.SEVERE, "Failed to finish paste", error);
+                return null;
+            });
         }
 
-        private List<ChunkPos> vecsToChunkPos(Set<Vector2i> vecs) {
+        @Override
+        public CompletableFuture<Void> finishPasteAsync(Set<Vector2i> chunksToRefresh) {
+            if (chunksToRefresh.isEmpty()) return CompletableFuture.completedFuture(null);
+            CraftWorld craftWorld = (CraftWorld) world;
+            ServerLevel serverLevel = craftWorld.getHandle();
+            var completion = new CompletableFuture<Void>();
+            Runnable relight = () -> {
+                try {
+                    var loadedChunks = chunksToRefresh.stream().map(Vector2i::new)
+                            .filter(chunk -> world.isChunkLoaded(chunk.x, chunk.y)).toList();
+                    if (loadedChunks.isEmpty()) {
+                        completion.complete(null);
+                        return;
+                    }
+                    serverLevel.getChunkSource().getLightEngine().starlight$serverRelightChunks(vecsToChunkPos(loadedChunks), _ -> {}, _ -> {
+                        try {
+                            var refreshes = new ArrayList<CompletableFuture<Void>>();
+                            for (var chunk : loadedChunks) {
+                                if (!world.isChunkLoaded(chunk.x, chunk.y)) continue;
+                                refreshes.add(runAt(new Location(world, chunk.x * 16, 0, chunk.y * 16),
+                                        () -> world.refreshChunk(chunk.x, chunk.y)));
+                            }
+                            CompletableFuture.allOf(refreshes.toArray(CompletableFuture[]::new)).whenComplete((ignored, error) -> {
+                                if (error == null) completion.complete(null);
+                                else completion.completeExceptionally(error);
+                            });
+                        } catch (Exception error) {
+                            completion.completeExceptionally(error);
+                        }
+                    });
+                } catch (Exception error) {
+                    completion.completeExceptionally(error);
+                }
+            };
+            try {
+                if (Bukkit.isPrimaryThread()) relight.run();
+                else Bukkit.getGlobalRegionScheduler().execute(PolarPaper.getPlugin(), relight);
+            } catch (Exception error) {
+                completion.completeExceptionally(error);
+            }
+            return completion;
+        }
+
+        private CompletableFuture<Void> runAt(Location location, Runnable action) {
+            var completion = new CompletableFuture<Void>();
+            Runnable task = () -> {
+                try {
+                    action.run();
+                    completion.complete(null);
+                } catch (Exception error) {
+                    completion.completeExceptionally(error);
+                }
+            };
+            try {
+                if (Bukkit.isOwnedByCurrentRegion(location)) task.run();
+                else Bukkit.getRegionScheduler().execute(PolarPaper.getPlugin(), location, task);
+            } catch (Exception error) {
+                completion.completeExceptionally(error);
+            }
+            return completion;
+        }
+
+        private boolean includes(int x, int y, int z) {
+            return selector.testChunk(x >> 4, z >> 4) && selector.test(x, y, z);
+        }
+
+        private List<ChunkPos> vecsToChunkPos(Collection<Vector2i> vecs) {
             List<ChunkPos> chunkPos = new ArrayList<>(vecs.size());
             for (Vector2i vec : vecs) {
                 chunkPos.add(new ChunkPos(vec.x(), vec.y()));

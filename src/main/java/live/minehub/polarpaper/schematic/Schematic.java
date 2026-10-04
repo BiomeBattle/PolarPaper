@@ -1,6 +1,5 @@
 package live.minehub.polarpaper.schematic;
 
-import live.minehub.polarpaper.PolarPaper;
 import live.minehub.polarpaper.core.userdata.EntityUtil;
 import live.minehub.polarpaper.core.userdata.WorldUserData;
 import live.minehub.polarpaper.core.util.CoordConversion;
@@ -24,6 +23,8 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.foreign.MemorySegment;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 public class Schematic {
 
@@ -33,6 +34,21 @@ public class Schematic {
     public static final NamespacedKey POS_2_KEY = new NamespacedKey("polarpaper", "pos2");
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir) {
+        paste(polarWorld, setter, pasteOffset, rotation, Flip.NONE, ignoreAir);
+    }
+
+    /**
+     * Pastes using the schematic's stored origin, reflecting source coordinates before rotation.
+     * <pre>{@code Schematic.paste(source, setter, destination, Rotation.NONE, Flip.X, IgnoreAir.EMPTY_SECTION);}</pre>
+     * @param polarWorld source world
+     * @param setter destination writer
+     * @param pasteOffset destination origin
+     * @param rotation rotation after reflection
+     * @param flip reflection of the source axes
+     * @param ignoreAir air handling policy
+     * @since 2.2.5-bb
+     */
+    public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir) {
         Vector3i offset;
         try {
             offset = WorldUserData.readSchematicOffset(polarWorld.userData());
@@ -40,7 +56,7 @@ public class Schematic {
             offset = null;
         }
 
-        paste(polarWorld, setter, pasteOffset, rotation, Flip.NONE, ignoreAir, offset == null ? new Vector3i() : offset);
+        paste(polarWorld, setter, pasteOffset, rotation, flip, ignoreAir, offset == null ? new Vector3i() : offset);
     }
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir, Vector3i schematicOffset) {
@@ -56,7 +72,25 @@ public class Schematic {
     }
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir, Vector3i schematicOffset, Biomes biomes) {
-        Vector3i offset = schematicOffset;
+        pasteAsync(polarWorld, setter, pasteOffset, rotation, flip, ignoreAir, schematicOffset, biomes)
+                .exceptionally(error -> {
+                    LOGGER.error("Failed to finish schematic paste", error);
+                    return null;
+                });
+    }
+
+    /**
+     * Writes blocks on the calling thread and tracks deferred writes and destination finalization.
+     * Callers must invoke this on the thread required by their setter; completion never blocks that thread.
+     * <pre>{@code Schematic.pasteAsync(source, setter, offset, rotation, flip,
+     *     IgnoreAir.EMPTY_SECTION, sourceOffset, Biomes.PASTE).thenRun(onReady);}</pre>
+     * @return completion after block entities, entity spawns, and setter finalization finish
+     * @since 2.2.5-bb
+     */
+    public static CompletableFuture<Void> pasteAsync(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir, Vector3i schematicOffset, Biomes biomes) {
+        var offset = new Vector3i(schematicOffset);
+        var destinationOffset = new Vector3i(pasteOffset);
+        var deferredWrites = new ArrayList<Supplier<CompletableFuture<Void>>>();
 
         Map<Vector3i, PolarChunk.BlockEntity> blockEntityMap = new HashMap<>();
 
@@ -69,11 +103,11 @@ public class Schematic {
                 i++;
                 if (!shouldPaste) continue;
 
-                pasteSection(section, setter, blockOffset, pasteOffset, rotation, flip, ignoreAir);
-                if (biomes == Biomes.PASTE) pasteBiomes(section, setter, blockOffset, pasteOffset, rotation, flip);
+                pasteSection(section, setter, blockOffset, destinationOffset, rotation, flip, ignoreAir);
+                if (biomes == Biomes.PASTE) pasteBiomes(section, setter, blockOffset, destinationOffset, rotation, flip);
             }
 
-            handleUserData(setter, pasteOffset, rotation, flip, chunk, offset);
+            handleUserData(setter, destinationOffset, rotation, flip, chunk, offset, deferredWrites);
 
             for (PolarChunk.BlockEntity blockEntity : chunk.blockEntities()) {
                 int x = CoordConversion.chunkBlockIndexGetX(blockEntity.index());
@@ -83,47 +117,58 @@ public class Schematic {
                 Vector3i blockOffset = new Vector3i(chunk.x() * 16, 0, chunk.z() * 16).sub(offset).add(x, y, z);
                 BlockUtil.flipBlockPos(blockOffset, flip);
                 BlockUtil.rotatePos(blockOffset, rotation);
-                blockOffset.add(pasteOffset);
+                blockOffset.add(destinationOffset);
 
                 blockEntityMap.put(blockOffset, blockEntity);
             }
         }
 
-        Vector3i finalOffset = offset;
-        Bukkit.getGlobalRegionScheduler().execute(PolarPaper.getPlugin(), () -> {
-            for (Map.Entry<Vector3i, PolarChunk.BlockEntity> entry : blockEntityMap.entrySet()) {
-                Vector3i blockOffset = entry.getKey();
-                PolarChunk.BlockEntity blockEntity = entry.getValue();
-                setter.setBlockEntity(blockOffset.x, blockOffset.y, blockOffset.z, blockEntity);
+        var pending = new ArrayList<CompletableFuture<?>>();
+        for (var entry : blockEntityMap.entrySet()) {
+            var position = entry.getKey();
+            var stored = entry.getValue();
+            var copy = new PolarChunk.BlockEntity(stored.index(), stored.id(), stored.data() == null ? null : stored.data().copy());
+            pending.add(setter.setBlockEntityAsync(position.x, position.y, position.z, copy));
+        }
+        for (var write : deferredWrites) pending.add(write.get());
+        var chunksToRefresh = new HashSet<Vector2i>();
+        for (var chunk : destinationChunks(polarWorld, offset, destinationOffset, rotation, flip)) {
+            for (int x = -1; x <= 1; x++) {
+                for (int z = -1; z <= 1; z++) chunksToRefresh.add(new Vector2i(chunk.x + x, chunk.y + z));
             }
-
-            Set<Vector2i> chunksToRefresh = new HashSet<>();
-            for (PolarChunk chunk : polarWorld.chunks()) {
-                Vector3i chunkOffset = new Vector3i(chunk.x() * 16, 0, chunk.z() * 16)
-                        .sub(finalOffset);
-                switch (flip) {
-                    case X -> chunkOffset.x = -chunkOffset.x - 16;
-                    case Z -> chunkOffset.z = -chunkOffset.z - 16;
-                    case NONE -> {}
-                }
-                BlockUtil.rotatePos(chunkOffset, rotation);
-                chunkOffset.add(pasteOffset.x, 0, pasteOffset.z);
-
-                int cX = (int)Math.floor(chunkOffset.x / 16.0);
-                int cZ = (int)Math.floor(chunkOffset.z / 16.0);
-
-                for (int x = -1; x <= 1; x++) {
-                    for (int z = -1; z <= 1; z++) {
-                        chunksToRefresh.add(new Vector2i(cX + x, cZ + z));
-                    }
-                }
-            }
-
-            if (setter instanceof Setter.World worldSetter) worldSetter.refreshChunks(chunksToRefresh);
-        });
+        }
+        return CompletableFuture.allOf(pending.toArray(CompletableFuture[]::new))
+                .thenCompose(_ -> setter.finishPasteAsync(chunksToRefresh));
     }
 
-    private static void handleUserData(Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, PolarChunk chunk, Vector3i offset) {
+    /**
+     * Resolves destination chunks from the same transformed block bounds used by the paste.
+     * <pre>{@code var chunks = Schematic.destinationChunks(source, sourceOffset, offset, rotation, flip);}</pre>
+     * @return destination chunks intersecting the source chunk footprints
+     * @since 2.2.5-bb
+     */
+    public static Set<Vector2i> destinationChunks(PolarWorld polarWorld, Vector3i schematicOffset, Vector3i pasteOffset, Rotation rotation, Flip flip) {
+        var chunks = new HashSet<Vector2i>();
+        for (var chunk : polarWorld.chunks()) {
+            var min = new Vector3i(chunk.x() * 16, 0, chunk.z() * 16).sub(schematicOffset);
+            var max = new Vector3i(min).add(15, 0, 15);
+            BlockUtil.flipBlockPos(min, flip);
+            BlockUtil.flipBlockPos(max, flip);
+            BlockUtil.rotatePos(min, rotation);
+            BlockUtil.rotatePos(max, rotation);
+            min.add(pasteOffset);
+            max.add(pasteOffset);
+            for (int x = Math.min(min.x, max.x) >> 4; x <= (Math.max(min.x, max.x) >> 4); x++) {
+                for (int z = Math.min(min.z, max.z) >> 4; z <= (Math.max(min.z, max.z) >> 4); z++) {
+                    chunks.add(new Vector2i(x, z));
+                }
+            }
+        }
+        return chunks;
+    }
+
+    private static void handleUserData(Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, PolarChunk chunk, Vector3i offset,
+                                       List<Supplier<CompletableFuture<Void>>> deferredWrites) {
         if (chunk.userData() == null || chunk.userData().length == 0) return;
 
         final List<PolarEntity> entities;
@@ -139,18 +184,9 @@ public class Schematic {
 
         for (PolarEntity polarEntity : entities) {
             Location spawnLocation = polarEntity.getLocation(null, chunk.x(), chunk.z());
-            spawnLocation.subtract(offset.x, offset.y, offset.z);
-            BlockUtil.flipLoc(spawnLocation, flip);
-            BlockUtil.rotateLoc(spawnLocation, rotation);
-            spawnLocation.add(pasteOffset.x, pasteOffset.y, pasteOffset.z);
+            BlockUtil.transformLoc(spawnLocation, offset, pasteOffset, rotation, flip);
 
-            switch (rotation) {
-                case CLOCKWISE_90 -> spawnLocation.add(1, 0, 0);
-                case CLOCKWISE_180 -> spawnLocation.add(1, 0, 1);
-                case CLOCKWISE_270 -> spawnLocation.add(0, 0, 1);
-            }
-
-            setter.spawnEntity(polarEntity, spawnLocation);
+            deferredWrites.add(() -> setter.spawnEntityAsync(polarEntity, spawnLocation));
         }
     }
 
