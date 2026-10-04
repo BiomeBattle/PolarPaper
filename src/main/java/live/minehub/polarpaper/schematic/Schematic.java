@@ -40,14 +40,22 @@ public class Schematic {
             offset = null;
         }
 
-        paste(polarWorld, setter, pasteOffset, rotation, ignoreAir, offset == null ? new Vector3i() : offset);
+        paste(polarWorld, setter, pasteOffset, rotation, Flip.NONE, ignoreAir, offset == null ? new Vector3i() : offset);
     }
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir, Vector3i schematicOffset) {
-        paste(polarWorld, setter, pasteOffset, rotation, ignoreAir, schematicOffset, Biomes.IGNORE);
+        paste(polarWorld, setter, pasteOffset, rotation, Flip.NONE, ignoreAir, schematicOffset, Biomes.IGNORE);
+    }
+
+    public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir, Vector3i schematicOffset) {
+        paste(polarWorld, setter, pasteOffset, rotation, flip, ignoreAir, schematicOffset, Biomes.IGNORE);
     }
 
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir, Vector3i schematicOffset, Biomes biomes) {
+        paste(polarWorld, setter, pasteOffset, rotation, Flip.NONE, ignoreAir, schematicOffset, biomes);
+    }
+
+    public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir, Vector3i schematicOffset, Biomes biomes) {
         Vector3i offset = schematicOffset;
 
         Map<Vector3i, PolarChunk.BlockEntity> blockEntityMap = new HashMap<>();
@@ -61,11 +69,11 @@ public class Schematic {
                 i++;
                 if (!shouldPaste) continue;
 
-                pasteSection(section, setter, blockOffset, pasteOffset, rotation, ignoreAir);
-                if (biomes == Biomes.PASTE) pasteBiomes(section, setter, blockOffset, pasteOffset, rotation);
+                pasteSection(section, setter, blockOffset, pasteOffset, rotation, flip, ignoreAir);
+                if (biomes == Biomes.PASTE) pasteBiomes(section, setter, blockOffset, pasteOffset, rotation, flip);
             }
 
-            handleUserData(setter, pasteOffset, rotation, chunk, offset);
+            handleUserData(setter, pasteOffset, rotation, flip, chunk, offset);
 
             for (PolarChunk.BlockEntity blockEntity : chunk.blockEntities()) {
                 int x = CoordConversion.chunkBlockIndexGetX(blockEntity.index());
@@ -73,6 +81,7 @@ public class Schematic {
                 int z = CoordConversion.chunkBlockIndexGetZ(blockEntity.index());
 
                 Vector3i blockOffset = new Vector3i(chunk.x() * 16, 0, chunk.z() * 16).sub(offset).add(x, y, z);
+                BlockUtil.flipBlockPos(blockOffset, flip);
                 BlockUtil.rotatePos(blockOffset, rotation);
                 blockOffset.add(pasteOffset);
 
@@ -92,6 +101,11 @@ public class Schematic {
             for (PolarChunk chunk : polarWorld.chunks()) {
                 Vector3i chunkOffset = new Vector3i(chunk.x() * 16, 0, chunk.z() * 16)
                         .sub(finalOffset);
+                switch (flip) {
+                    case X -> chunkOffset.x = -chunkOffset.x - 16;
+                    case Z -> chunkOffset.z = -chunkOffset.z - 16;
+                    case NONE -> {}
+                }
                 BlockUtil.rotatePos(chunkOffset, rotation);
                 chunkOffset.add(pasteOffset.x, 0, pasteOffset.z);
 
@@ -109,7 +123,7 @@ public class Schematic {
         });
     }
 
-    private static void handleUserData(Setter setter, Vector3i pasteOffset, Rotation rotation, PolarChunk chunk, Vector3i offset) {
+    private static void handleUserData(Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, PolarChunk chunk, Vector3i offset) {
         if (chunk.userData() == null || chunk.userData().length == 0) return;
 
         final List<PolarEntity> entities;
@@ -126,6 +140,7 @@ public class Schematic {
         for (PolarEntity polarEntity : entities) {
             Location spawnLocation = polarEntity.getLocation(null, chunk.x(), chunk.z());
             spawnLocation.subtract(offset.x, offset.y, offset.z);
+            BlockUtil.flipLoc(spawnLocation, flip);
             BlockUtil.rotateLoc(spawnLocation, rotation);
             spawnLocation.add(pasteOffset.x, pasteOffset.y, pasteOffset.z);
 
@@ -139,7 +154,7 @@ public class Schematic {
         }
     }
 
-    private static void pasteBiomes(PolarSection polarSection, Setter setter, Vector3i offset, Vector3i pasteOffset, Rotation rotation) {
+    private static void pasteBiomes(PolarSection polarSection, Setter setter, Vector3i offset, Vector3i pasteOffset, Rotation rotation, Flip flip) {
         if (polarSection.isEmpty()) return;
 
         String[] palette = polarSection.biomePalette();
@@ -161,6 +176,7 @@ public class Schematic {
 
                     Vector3i cellPos = new Vector3i(x * 4, y * 4, z * 4);
                     cellPos.add(offset);
+                    BlockUtil.flipBiomePos(cellPos, flip);
                     BlockUtil.rotatePos(cellPos, rotation);
                     cellPos.add(pasteOffset);
 
@@ -170,7 +186,7 @@ public class Schematic {
         }
     }
 
-    private static void pasteSection(PolarSection polarSection, Setter setter, Vector3i offset, Vector3i pasteOffset, Rotation rotation, IgnoreAir ignoreAir) {
+    private static void pasteSection(PolarSection polarSection, Setter setter, Vector3i offset, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir) {
         // Blocks
         long[] blockDataLongs = polarSection.blockData();
         int blockDataBits = blockDataLongs == null ? 0 : PaletteUtil.getBitsForLongLength(blockDataLongs.length, PolarSection.BLOCK_PALETTE_SIZE);
@@ -194,13 +210,14 @@ public class Schematic {
             BlockState blockState = materialPalette[0];
             if (blockState.isAir() && (ignoreAir == IgnoreAir.ALL || ignoreAir == IgnoreAir.EMPTY_SECTION)) return;
 
-            BlockState rotatedState = blockState.rotate(rotation.getMcRot());
+            BlockState rotatedState = blockState.mirror(flip.getMcMirror()).rotate(rotation.getMcRot());
 
             for (int y = 0; y < 16; y++) {
                 for (int z = 0; z < 16; z++) {
                     for (int x = 0; x < 16; x++) {
                         Vector3i blockPos = new Vector3i(x, y, z);
                         blockPos.add(offset);
+                        BlockUtil.flipBlockPos(blockPos, flip);
                         BlockUtil.rotatePos(blockPos, rotation);
                         blockPos.add(pasteOffset);
 
@@ -218,7 +235,8 @@ public class Schematic {
 
                         Vector3i blockPos = new Vector3i(x, y, z);
                         blockPos.add(offset);
-                        blockState = blockState.rotate(rotation.getMcRot());
+                        blockState = blockState.mirror(flip.getMcMirror()).rotate(rotation.getMcRot());
+                        BlockUtil.flipBlockPos(blockPos, flip);
                         BlockUtil.rotatePos(blockPos, rotation);
                         blockPos.add(pasteOffset);
 

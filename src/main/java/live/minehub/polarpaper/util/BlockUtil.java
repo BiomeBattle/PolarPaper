@@ -4,6 +4,7 @@ import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManage
 import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.NewChunkHolder;
 import live.minehub.polarpaper.core.util.CoordConversion;
 import live.minehub.polarpaper.core.world.PolarChunk;
+import live.minehub.polarpaper.schematic.Flip;
 import live.minehub.polarpaper.schematic.Rotation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -188,6 +189,57 @@ public class BlockUtil {
         rotatePos(vec, rotation);
         loc.set(vec.x, vec.y, vec.z);
         loc.setYaw(loc.getYaw() + rotation.toDegrees());
+    }
+
+    public static void flipBlockPos(@NotNull Vector3i point, @NotNull Flip flip) {
+        switch (flip) {
+            case X -> point.x = -point.x - 1;
+            case Z -> point.z = -point.z - 1;
+            case NONE -> {}
+        }
+    }
+
+    public static void flipPointPos(@NotNull Vector3i point, @NotNull Flip flip) {
+        switch (flip) {
+            case X -> point.x = -point.x;
+            case Z -> point.z = -point.z;
+            case NONE -> {}
+        }
+    }
+
+    public static float flipYaw(float yaw, @NotNull Flip flip) {
+        return switch (flip) {
+            case X -> -yaw;
+            case Z -> 180 - yaw;
+            case NONE -> yaw;
+        };
+    }
+
+    public static void flipBiomePos(@NotNull Vector3i point, @NotNull Flip flip) {
+        switch (flip) {
+            case X -> point.x = -point.x - 4;
+            case Z -> point.z = -point.z - 4;
+            case NONE -> {}
+        }
+    }
+
+    public static void flipPos(@NotNull Vector3d point, @NotNull Flip flip) {
+        switch (flip) {
+            case X -> point.x = -point.x;
+            case Z -> point.z = -point.z;
+            case NONE -> {}
+        }
+    }
+
+    public static void flipLoc(@NotNull Location loc, @NotNull Flip flip) {
+        Vector3d vec = new Vector3d(loc.x(), loc.y(), loc.z());
+        flipPos(vec, flip);
+        loc.set(vec.x, vec.y, vec.z);
+        switch (flip) {
+            case X -> loc.setYaw(-loc.getYaw());
+            case Z -> loc.setYaw(180 - loc.getYaw());
+            case NONE -> {}
+        }
     }
 
     public static void rotatePos(@NotNull Vector3i point, @NotNull Rotation rotation) {
