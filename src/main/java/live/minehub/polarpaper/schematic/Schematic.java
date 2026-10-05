@@ -37,17 +37,6 @@ public class Schematic {
         paste(polarWorld, setter, pasteOffset, rotation, Flip.NONE, ignoreAir);
     }
 
-    /**
-     * Pastes using the schematic's stored origin, reflecting source coordinates before rotation.
-     * <pre>{@code Schematic.paste(source, setter, destination, Rotation.NONE, Flip.X, IgnoreAir.EMPTY_SECTION);}</pre>
-     * @param polarWorld source world
-     * @param setter destination writer
-     * @param pasteOffset destination origin
-     * @param rotation rotation after reflection
-     * @param flip reflection of the source axes
-     * @param ignoreAir air handling policy
-     * @since 2.2.5-bb
-     */
     public static void paste(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir) {
         Vector3i offset;
         try {
@@ -79,14 +68,6 @@ public class Schematic {
                 });
     }
 
-    /**
-     * Writes blocks on the calling thread and tracks deferred writes and destination finalization.
-     * Callers must invoke this on the thread required by their setter; completion never blocks that thread.
-     * <pre>{@code Schematic.pasteAsync(source, setter, offset, rotation, flip,
-     *     IgnoreAir.EMPTY_SECTION, sourceOffset, Biomes.PASTE).thenRun(onReady);}</pre>
-     * @return completion after block entities, entity spawns, and setter finalization finish
-     * @since 2.2.5-bb
-     */
     public static CompletableFuture<Void> pasteAsync(PolarWorld polarWorld, Setter setter, Vector3i pasteOffset, Rotation rotation, Flip flip, IgnoreAir ignoreAir, Vector3i schematicOffset, Biomes biomes) {
         var offset = new Vector3i(schematicOffset);
         var destinationOffset = new Vector3i(pasteOffset);
@@ -141,12 +122,6 @@ public class Schematic {
                 .thenCompose(_ -> setter.finishPasteAsync(chunksToRefresh));
     }
 
-    /**
-     * Resolves destination chunks from the same transformed block bounds used by the paste.
-     * <pre>{@code var chunks = Schematic.destinationChunks(source, sourceOffset, offset, rotation, flip);}</pre>
-     * @return destination chunks intersecting the source chunk footprints
-     * @since 2.2.5-bb
-     */
     public static Set<Vector2i> destinationChunks(PolarWorld polarWorld, Vector3i schematicOffset, Vector3i pasteOffset, Rotation rotation, Flip flip) {
         var chunks = new HashSet<Vector2i>();
         for (var chunk : polarWorld.chunks()) {

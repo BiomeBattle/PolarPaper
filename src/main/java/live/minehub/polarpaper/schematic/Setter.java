@@ -43,35 +43,18 @@ public interface Setter {
         return true;
     }
 
-    /**
-     * Writes a block entity and reports completion. Asynchronous setters must override this method.
-     * <pre>{@code var completion = setter.setBlockEntityAsync(x, y, z, blockEntity);}</pre>
-     * @return completion of the block-entity write
-     * @since 2.2.5-bb
-     */
     default CompletableFuture<Void> setBlockEntityAsync(int x, int y, int z, PolarChunk.BlockEntity blockEntity) {
         setBlockEntity(x, y, z, blockEntity);
         return CompletableFuture.completedFuture(null);
     }
 
-    /**
-     * Spawns an entity and reports completion. Asynchronous setters must override this method.
-     * <pre>{@code var completion = setter.spawnEntityAsync(entity, location);}</pre>
-     * @return completion of the entity spawn
-     * @since 2.2.5-bb
-     */
+
     default CompletableFuture<Void> spawnEntityAsync(PolarEntity polarEntity, Location spawnLocation) {
         spawnEntity(polarEntity, spawnLocation);
         return CompletableFuture.completedFuture(null);
     }
 
-    /**
-     * Finishes destination-specific work after all paste writes complete.
-     * <pre>{@code var completion = setter.finishPasteAsync(chunks);}</pre>
-     * @param chunksToRefresh destination chunks affected by the paste
-     * @return completion of destination finalization
-     * @since 2.2.5-bb
-     */
+
     default CompletableFuture<Void> finishPasteAsync(Set<Vector2i> chunksToRefresh) {
         return CompletableFuture.completedFuture(null);
     }
@@ -96,13 +79,6 @@ public interface Setter {
 
         public BlockSelector getBlockSelector() {
             return selector;
-        }
-
-        @Override
-        public boolean shouldPaste(PolarChunk polarChunk, PolarSection section, int sectionY, Vector3i cornerPos) {
-            // Source chunk coordinates do not describe a reflected or translated destination footprint.
-            // The destination selector is applied by each write instead.
-            return true;
         }
 
         @Override

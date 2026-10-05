@@ -192,15 +192,6 @@ public class BlockUtil {
         loc.setYaw(loc.getYaw() + rotation.toDegrees());
     }
 
-    /**
-     * Transforms a continuous local point into paste coordinates: flip, rotate, then adjust the
-     * rotated block corner. Block indices must instead use {@link #flipBlockPos(Vector3i, Flip)}.
-     * <pre>{@code BlockUtil.transformPos(point, Rotation.CLOCKWISE_90, Flip.X);}</pre>
-     * @param point point to transform in place
-     * @param rotation rotation applied after reflection
-     * @param flip reflection of the source coordinates
-     * @since 2.2.5-bb
-     */
     public static void transformPos(@NotNull Vector3d point, @NotNull Rotation rotation, @NotNull Flip flip) {
         flipPos(point, flip);
         rotatePos(point, rotation);
@@ -212,16 +203,6 @@ public class BlockUtil {
         }
     }
 
-    /**
-     * Maps an absolute source location and facing into the destination paste in place.
-     * <pre>{@code BlockUtil.transformLoc(location, sourceOffset, destinationOffset, rotation, flip);}</pre>
-     * @param loc source location to transform
-     * @param schematicOffset source origin
-     * @param pasteOffset destination origin
-     * @param rotation rotation applied after reflection
-     * @param flip reflection of the source coordinates
-     * @since 2.2.5-bb
-     */
     public static void transformLoc(@NotNull Location loc, @NotNull Vector3i schematicOffset,
                                    @NotNull Vector3i pasteOffset, @NotNull Rotation rotation, @NotNull Flip flip) {
         var point = new Vector3d(loc.x(), loc.y(), loc.z())
