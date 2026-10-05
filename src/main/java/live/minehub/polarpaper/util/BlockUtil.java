@@ -174,7 +174,7 @@ public class BlockUtil {
         ChunkAccess chunkAccess = chunkHolder.getCurrentChunk();
         if (chunkAccess == null) return;
 
-        var data = blockEntity.data().copy();
+        var data = blockEntity.data() == null ? new net.minecraft.nbt.CompoundTag() : blockEntity.data().copy();
         data.putInt("x", x);
         data.putInt("y", y);
         data.putInt("z", z);
@@ -221,14 +221,6 @@ public class BlockUtil {
         }
     }
 
-    public static void flipPointPos(@NotNull Vector3i point, @NotNull Flip flip) {
-        switch (flip) {
-            case X -> point.x = -point.x;
-            case Z -> point.z = -point.z;
-            case NONE -> {}
-        }
-    }
-
     public static float flipYaw(float yaw, @NotNull Flip flip) {
         return switch (flip) {
             case X -> -yaw;
@@ -237,29 +229,10 @@ public class BlockUtil {
         };
     }
 
-    public static void flipBiomePos(@NotNull Vector3i point, @NotNull Flip flip) {
-        switch (flip) {
-            case X -> point.x = -point.x - 4;
-            case Z -> point.z = -point.z - 4;
-            case NONE -> {}
-        }
-    }
-
     public static void flipPos(@NotNull Vector3d point, @NotNull Flip flip) {
         switch (flip) {
             case X -> point.x = -point.x;
             case Z -> point.z = -point.z;
-            case NONE -> {}
-        }
-    }
-
-    public static void flipLoc(@NotNull Location loc, @NotNull Flip flip) {
-        Vector3d vec = new Vector3d(loc.x(), loc.y(), loc.z());
-        flipPos(vec, flip);
-        loc.set(vec.x, vec.y, vec.z);
-        switch (flip) {
-            case X -> loc.setYaw(-loc.getYaw());
-            case Z -> loc.setYaw(180 - loc.getYaw());
             case NONE -> {}
         }
     }

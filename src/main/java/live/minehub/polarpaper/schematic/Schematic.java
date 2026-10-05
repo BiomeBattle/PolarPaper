@@ -185,9 +185,9 @@ public class Schematic {
                 for (int x = 0; x < 4; x++) {
                     String biome = palette[Math.min(indices[cellIndex++], palette.length - 1)];
 
-                    Vector3i cellPos = new Vector3i(x * 4, y * 4, z * 4);
+                    Vector3i cellPos = new Vector3i(x * 4 + 2, y * 4 + 2, z * 4 + 2);
                     cellPos.add(offset);
-                    BlockUtil.flipBiomePos(cellPos, flip);
+                    BlockUtil.flipBlockPos(cellPos, flip);
                     BlockUtil.rotatePos(cellPos, rotation);
                     cellPos.add(pasteOffset);
 
