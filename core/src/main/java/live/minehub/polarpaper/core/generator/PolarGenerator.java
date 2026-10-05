@@ -6,7 +6,10 @@ import live.minehub.polarpaper.core.world.PolarWorld;
 import live.minehub.polarpaper.core.world.PolarWorldAccess;
 import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
+import net.kyori.adventure.builder.AbstractBuilder;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.TextComponent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
@@ -19,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 
 public abstract class PolarGenerator extends ChunkGenerator {
     private Config config;
@@ -30,6 +34,11 @@ public abstract class PolarGenerator extends ChunkGenerator {
         this.source = source;
         this.worldAccess = worldAccess;
     }
+
+    /**
+     * Called after a world has been fully created, used by default in Polar to insert chunks
+     */
+    public abstract CompletableFuture<Void> load(@NotNull World world);
 
     public Config getConfig() {
         return this.config;
@@ -53,7 +62,44 @@ public abstract class PolarGenerator extends ChunkGenerator {
 
     public abstract @Nullable PolarWorld getPolarWorld();
 
-    public abstract Component getInfoComponent(World world);
+    public Component getInfoComponent(World world) {
+        TextComponent.Builder builder = Component.text();
+
+        builder.append(Component.text("Info for ", NamedTextColor.AQUA))
+                .append(Component.text(world.getKey().getKey(), NamedTextColor.AQUA))
+                .append(Component.text(":", NamedTextColor.AQUA))
+                .appendNewline();
+
+        builder.append(Component.text(" Compression: ", NamedTextColor.AQUA))
+                .append(Component.text(getConfig().compression().name(), NamedTextColor.AQUA))
+                .appendNewline();
+
+        builder.append(Component.text(" Source: ", NamedTextColor.AQUA))
+                .append(Component.text(getSource() == null ? "None" : getSource().getClass().getSimpleName(), NamedTextColor.AQUA));
+        if (source != null) {
+            builder.append(Component.text(" (", NamedTextColor.GRAY));
+            long size = source.size();
+            if (size < 10_000) builder.append(Component.text(size + " bytes", NamedTextColor.GRAY));
+            else if (size < 10_000_000) builder.append(Component.text(size/1000 + " kB", NamedTextColor.GRAY));
+            else builder.append(Component.text(size/1_000_000 + " MB", NamedTextColor.GRAY));
+            builder.append(Component.text(")", NamedTextColor.GRAY));
+        }
+        builder.appendNewline();
+
+        builder.append(Component.text(" Generator: ", NamedTextColor.AQUA))
+                .append(Component.text(getClass().getSimpleName(), NamedTextColor.AQUA))
+                .appendNewline();
+
+        builder.append(Component.text(" Spawn: ", NamedTextColor.AQUA))
+                .append(Component.text(getConfig().spawnString(), NamedTextColor.AQUA))
+                .appendNewline();
+
+        addInfoComponent(world, builder);
+
+        return ((AbstractBuilder<TextComponent>)builder).build();
+    }
+
+    public abstract void addInfoComponent(World world, TextComponent.Builder builder);
 
     public abstract byte[] getUserData();
 
