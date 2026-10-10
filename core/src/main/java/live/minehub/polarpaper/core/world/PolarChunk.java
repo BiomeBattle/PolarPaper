@@ -308,19 +308,8 @@ public record PolarChunk(
         List<String> blockPaletteStrings = new ArrayList<>();
 
         Palette<BlockState> chunkPalette = palette.data.palette();
-        if (chunkPalette instanceof GlobalPalette<BlockState> globalPalette) {
-            for (int i1 = 0; i1 < globalPalette.getSize(); i1++) {
-                BlockState blockState = globalPalette.valueFor(i1);
-                blockPaletteStrings.add(BlockCodec.stringFromBlock(blockState));
-            }
-        } else {
-            Object[] rawPalette = chunkPalette.moonrise$getRawPalette(palette.data);
-            if (rawPalette != null) {
-                for (Object p : rawPalette) {
-                    if (!(p instanceof BlockState blockState)) continue;
-                    blockPaletteStrings.add(BlockCodec.stringFromBlock(blockState));
-                }
-            }
+        for (int i = 0; i < chunkPalette.getSize(); i++) {
+            blockPaletteStrings.add(BlockCodec.stringFromBlock(chunkPalette.valueFor(i)));
         }
 
         return blockPaletteStrings;
@@ -328,15 +317,11 @@ public record PolarChunk(
 
     private static List<String> getBiomePaletteStrings(PalettedContainer<Holder<Biome>> biomes, Registry<Biome> biomeRegistry) {
         List<String> biomePaletteStrings = new ArrayList<>();
-        Object[] biomePalette = biomes.data.palette().moonrise$getRawPalette(biomes.data);
-        for (Object p : biomePalette) {
-            if (p == null) continue;
-            if (!(p instanceof Holder<?> biomeHolder)) continue;
-            if (!(biomeHolder.value() instanceof Biome biome)) continue;
-            Identifier key = biomeRegistry.getKey(biome);
+        Palette<Holder<Biome>> biomePalette = biomes.data.palette();
+        for (int i = 0; i < biomePalette.getSize(); i++) {
+            Identifier key = biomeRegistry.getKey(biomePalette.valueFor(i).value());
             if (key == null) continue;
-            String biomeString = key.toString();
-            biomePaletteStrings.add(biomeString);
+            biomePaletteStrings.add(key.toString());
         }
         return biomePaletteStrings;
     }
@@ -356,7 +341,7 @@ public record PolarChunk(
         biomeData = biomeBitStorage.getRaw();
 
         BitStorage blockBitStorage = copiedPalette.data.storage();
-        int airIndex = blockPaletteStrings.indexOf("minecraft:air");
+        int airIndex = blockPaletteStrings.indexOf(PaletteUtil.DEFAULT_BLOCK_PALETTE);
 
         // TODO: needs to remove no longer used palette entries and then fix the int array
 
@@ -478,7 +463,7 @@ public record PolarChunk(
         long[] biomeData = captureBiomes(chunkAccessSection, biomeRegistry, biomePaletteStrings);
 
         return new PolarSection(
-                new String[]{"minecraft:air"}, null,
+                new String[]{PaletteUtil.DEFAULT_BLOCK_PALETTE}, null,
                 biomePaletteStrings.toArray(new String[0]), biomeData,
                 blockLightContent, blockLight,
                 skyLightContent, skyLight
@@ -487,18 +472,7 @@ public record PolarChunk(
 
     private static long[] captureBiomes(LevelChunkSection chunkAccessSection, Registry<Biome> biomeRegistry, List<String> paletteOut) {
         PalettedContainer.Data<Holder<Biome>> biomePaletteData = ((PalettedContainer<Holder<Biome>>)chunkAccessSection.getBiomes()).data;
-        Object[] biomePalette = biomePaletteData.palette().moonrise$getRawPalette(biomePaletteData);
-
-        for (Object p : biomePalette) {
-            if (p == null) continue;
-            if (!(p instanceof Holder<?> biomeHolder)) continue;
-            if (!(biomeHolder.value() instanceof Biome biome)) continue;
-
-            Identifier key = biomeRegistry.getKey(biome);
-            if (key == null) continue;
-
-            paletteOut.add(key.toString());
-        }
+        paletteOut.addAll(getBiomePaletteStrings((PalettedContainer<Holder<Biome>>) chunkAccessSection.getBiomes(), biomeRegistry));
 
         return biomePaletteData.storage().getRaw();
     }

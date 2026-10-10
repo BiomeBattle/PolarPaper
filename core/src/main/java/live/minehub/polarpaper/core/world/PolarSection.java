@@ -29,6 +29,9 @@ import org.slf4j.LoggerFactory;
 import java.util.Arrays;
 import java.util.List;
 
+import static live.minehub.polarpaper.core.util.PaletteUtil.DEFAULT_BIOME_PALETTE;
+import static live.minehub.polarpaper.core.util.PaletteUtil.DEFAULT_BLOCK_PALETTE;
+
 /**
  * Representation of the latest version of the section format.
  * <p>
@@ -64,9 +67,9 @@ public class PolarSection {
     public PolarSection() {
         this.empty = true;
 
-        this.blockPalette = new String[]{"minecraft:air"};
+        this.blockPalette = new String[]{PaletteUtil.DEFAULT_BLOCK_PALETTE};
         this.blockData = null;
-        this.biomePalette = new String[]{"minecraft:plains"};
+        this.biomePalette = new String[]{PaletteUtil.DEFAULT_BIOME_PALETTE};
         this.biomeData = null;
 
         this.blockLightContent = LightContent.MISSING;
@@ -100,9 +103,9 @@ public class PolarSection {
     ) {
         this.empty = false;
 
-        this.blockPalette = new String[]{"minecraft:air"};
+        this.blockPalette = new String[]{PaletteUtil.DEFAULT_BLOCK_PALETTE};
         this.blockData = null;
-        this.biomePalette = new String[]{"minecraft:plains"};
+        this.biomePalette = new String[]{PaletteUtil.DEFAULT_BIOME_PALETTE};
         this.biomeData = null;
 
         this.blockLightContent = blockLightContent;

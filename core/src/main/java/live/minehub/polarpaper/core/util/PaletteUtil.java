@@ -10,6 +10,10 @@ import java.lang.invoke.MethodType;
 public final class PaletteUtil {
     private PaletteUtil() {}
 
+    public static final String DEFAULT_BLOCK_PALETTE = "minecraft:air";
+    public static final String DEFAULT_BIOME_PALETTE = "minecraft:plains";
+
+
     private static final MethodHandle GET_CONFIGURATION_HANDLE;
     static {
         try {

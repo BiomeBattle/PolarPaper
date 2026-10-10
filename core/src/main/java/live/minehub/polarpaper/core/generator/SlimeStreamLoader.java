@@ -8,6 +8,7 @@ import live.minehub.polarpaper.core.source.SlimeFilePolarSource;
 import live.minehub.polarpaper.core.userdata.EntitySerializer;
 import live.minehub.polarpaper.core.util.LightUtil;
 import live.minehub.polarpaper.core.util.MemorySegmentReader;
+import live.minehub.polarpaper.core.util.PaletteUtil;
 import live.minehub.polarpaper.core.util.TaskFutures;
 import live.minehub.polarpaper.core.world.*;
 import net.kyori.adventure.text.Component;
@@ -38,6 +39,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
+
+import static live.minehub.polarpaper.core.util.PaletteUtil.DEFAULT_BIOME_PALETTE;
+import static live.minehub.polarpaper.core.util.PaletteUtil.DEFAULT_BLOCK_PALETTE;
 
 public class SlimeStreamLoader extends PolarGenerator {
     private static final Logger LOGGER = LoggerFactory.getLogger(SlimeStreamLoader.class);
@@ -306,13 +310,13 @@ public class SlimeStreamLoader extends PolarGenerator {
                     blockData = tagg.getLongArray("data").orElse(null);
                 }
             } else {
-                blockPalette = new String[] { "minecraft:air" };
+                blockPalette = new String[] {PaletteUtil.DEFAULT_BLOCK_PALETTE};
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
-        String[] biomePalette = new String[] { "minecraft:plains" };
+        String[] biomePalette = new String[] {PaletteUtil.DEFAULT_BIOME_PALETTE};
         long[] biomeData = null;
         try {
             int length = reader.readInt();
