@@ -25,6 +25,7 @@ import org.joml.Vector3i;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.IntConsumer;
 
 public class BlockUtil {
@@ -192,8 +193,8 @@ public class BlockUtil {
         loc.setYaw(loc.getYaw() + rotation.toDegrees());
     }
 
-    public static void transformPos(@NotNull Vector3d point, @NotNull Rotation rotation, @NotNull Flip flip) {
-        flipPos(point, flip);
+    public static void transformPos(@NotNull Vector3d point, @NotNull Rotation rotation, @NotNull Set<Flip> flips) {
+        flipPos(point, flips);
         rotatePos(point, rotation);
         switch (rotation) {
             case CLOCKWISE_90 -> point.add(1, 0, 0);
@@ -204,37 +205,31 @@ public class BlockUtil {
     }
 
     public static void transformLoc(@NotNull Location loc, @NotNull Vector3i schematicOffset,
-                                   @NotNull Vector3i pasteOffset, @NotNull Rotation rotation, @NotNull Flip flip) {
+                                   @NotNull Vector3i pasteOffset, @NotNull Rotation rotation, @NotNull Set<Flip> flips) {
         var point = new Vector3d(loc.x(), loc.y(), loc.z())
                 .sub(schematicOffset.x, schematicOffset.y, schematicOffset.z);
-        transformPos(point, rotation, flip);
+        transformPos(point, rotation, flips);
         point.add(pasteOffset.x, pasteOffset.y, pasteOffset.z);
         loc.set(point.x, point.y, point.z);
-        loc.setYaw(flipYaw(loc.getYaw(), flip) + rotation.toDegrees());
+        loc.setYaw(flipYaw(loc.getYaw(), flips) + rotation.toDegrees());
     }
 
-    public static void flipBlockPos(@NotNull Vector3i point, @NotNull Flip flip) {
-        switch (flip) {
-            case X -> point.x = -point.x - 1;
-            case Z -> point.z = -point.z - 1;
-            case NONE -> {}
-        }
+    public static void flipBlockPos(@NotNull Vector3i point, @NotNull Set<Flip> flips) {
+        if (flips.contains(Flip.X)) point.x = -point.x - 1;
+        if (flips.contains(Flip.Y)) point.y = -point.y - 1;
+        if (flips.contains(Flip.Z)) point.z = -point.z - 1;
     }
 
-    public static float flipYaw(float yaw, @NotNull Flip flip) {
-        return switch (flip) {
-            case X -> -yaw;
-            case Z -> 180 - yaw;
-            case NONE -> yaw;
-        };
+    public static float flipYaw(float yaw, @NotNull Set<Flip> flips) {
+        if (flips.contains(Flip.X)) yaw = -yaw;
+        if (flips.contains(Flip.Z)) yaw = 180 - yaw;
+        return yaw;
     }
 
-    public static void flipPos(@NotNull Vector3d point, @NotNull Flip flip) {
-        switch (flip) {
-            case X -> point.x = -point.x;
-            case Z -> point.z = -point.z;
-            case NONE -> {}
-        }
+    public static void flipPos(@NotNull Vector3d point, @NotNull Set<Flip> flips) {
+        if (flips.contains(Flip.X)) point.x = -point.x;
+        if (flips.contains(Flip.Y)) point.y = -point.y;
+        if (flips.contains(Flip.Z)) point.z = -point.z;
     }
 
     public static void rotatePos(@NotNull Vector3i point, @NotNull Rotation rotation) {
